@@ -60,27 +60,47 @@ render() {
   envsubst "$vars" < "$1"
 }
 
+# render_data: árbol base + seeds (/seed/*.ldif) ya renderizados, en un solo LDIF.
+render_data() {
+  render "$TEMPLATES_DIR/base.ldif"
+  for seed in "$SEED_DIR"/*.ldif; do
+    [ -e "$seed" ] || continue
+    echo
+    render "$seed"
+  done
+}
+
 initialize() {
   echo "entrypoint: primer arranque, inicializando el directorio"
   rm -rf "$CONFIG_DIR" "$DATA_DIR"
   mkdir -p "$CONFIG_DIR" "$DATA_DIR"
   work=$(mktemp -d)
 
-  hash_passwords
   render "$TEMPLATES_DIR/config.ldif" > "$work/config.ldif"
-  {
-    render "$TEMPLATES_DIR/base.ldif"
-    for seed in "$SEED_DIR"/*.ldif; do
-      [ -e "$seed" ] || continue
-      echo
-      render "$seed"
-    done
-  } > "$work/data.ldif"
+  render_data > "$work/data.ldif"
 
   slapadd -n 0 -F "$CONFIG_DIR" -l "$work/config.ldif"
   slapadd -n 1 -F "$CONFIG_DIR" -l "$work/data.ldif"
   rm -rf "$work"
   touch "$MARKER"
+}
+
+# Aplica las contraseñas actuales sobre un directorio ya inicializado (rotación),
+# sin conexión y antes de iniciar slapd: olcRootPW y cada userPassword de las plantillas.
+apply_passwords() {
+  echo "entrypoint: aplicando las contraseñas actuales"
+  work=$(mktemp -d)
+
+  printf 'dn: olcDatabase={1}mdb,cn=config\nchangetype: modify\nreplace: olcRootPW\nolcRootPW: %s\n-\n' \
+    "$LDAP_ADMIN_PASSWORD_HASH" > "$work/config.ldif"
+  render_data | awk '
+    /^dn: /           { dn = $0 }
+    /^userPassword: / { print dn; print "changetype: modify"; print "replace: userPassword"; print; print "-"; print "" }
+  ' > "$work/data.ldif"
+
+  slapmodify -n 0 -F "$CONFIG_DIR" -l "$work/config.ldif"
+  slapmodify -n 1 -F "$CONFIG_DIR" -l "$work/data.ldif"
+  rm -rf "$work"
 }
 
 require LDAP_BASE_DN LDAP_ORG_NAME LDAP_PORT LDAP_SERVICE_CN LDAP_DB_MAX_SIZE LDAP_LOG_LEVEL
@@ -92,7 +112,12 @@ export LDAP_DC="${LDAP_DC#dc=}"
 load_secret_files
 require LDAP_ADMIN_PASSWORD LDAP_SERVICE_PASSWORD
 
-[ -f "$MARKER" ] || initialize
+hash_passwords
+if [ -f "$MARKER" ]; then
+  apply_passwords
+else
+  initialize
+fi
 forget_passwords
 
 exec slapd -d "$LDAP_LOG_LEVEL" -F "$CONFIG_DIR" -h "ldap://0.0.0.0:${LDAP_PORT}/"

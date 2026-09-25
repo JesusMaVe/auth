@@ -36,13 +36,23 @@ ldapwhoami -x -H ldap://127.0.0.1:1389 -D uid=alice,ou=users,dc=auth,dc=local -W
 
 El seed se carga solo en el **primer** arranque; para recargarlo: `make clean && make up`.
 
-`make up` ejecuta antes `make secrets`, que escribe cada `*_PASSWORD` de `.env` en `secrets/` (ignorado por git). Compose los monta como Docker secrets: los contenedores nunca reciben contraseñas como variables de entorno.
+`make up` escribe cada `*_PASSWORD` de `.env` en `secrets/` (ignorado por git), y Compose los monta como Docker secrets: los contenedores nunca reciben contraseñas como variables de entorno.
+
+### Rotar contraseñas
+
+ldap y postgres aplican las contraseñas de los secretos **en cada arranque**, y `make up` recrea los contenedores cuando algún secreto cambió. Para rotar, sin perder datos:
+
+```bash
+rm .env && make env   # o edita los *_PASSWORD de .env
+make up               # detecta el cambio, recrea y aplica
+```
 
 ## Estructura
 
 | Carpeta | Contenido |
 |---|---|
 | `ldap/` | Imagen OpenLDAP propia |
+| `postgres/` | Imagen oficial + entrypoint que aplica la contraseña en cada arranque |
 | `test/` | Smoke tests de infraestructura |
 | `scripts/` | Utilidades del repo (`gen-env.sh`, `sync-secrets.sh`) |
 | `docs/` | Spec y planes por etapa |

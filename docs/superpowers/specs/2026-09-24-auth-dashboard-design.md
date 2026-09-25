@@ -32,7 +32,7 @@ Android ──Bearer JWT──────────────────�
   - `POST /api/auth/token` → para Android, devuelve el JWT (sin cookie).
   - `GET /api/items`, `POST /api/items`
   - **Un solo middleware `RequireUser`** (DRY): acepta sesión por cookie **o** `Authorization: Bearer`, y pone el usuario en el `context`.
-- **postgres**: sesiones con `scs/pgxstore` + tabla `items`. Migraciones versionadas con `goose` (embebidas).
+- **postgres**: imagen oficial con un entrypoint mínimo propio (`/postgres`) que aplica la contraseña en cada arranque. Sesiones con `scs/pgxstore` + tabla `items`. Migraciones versionadas con `goose` (embebidas).
 - **frontend** (Vite + React + TS): TanStack Router (rutas por archivo) + TanStack Query.
   - `meQueryOptions` es la única pieza de sesión en el cliente.
   - Layout `_authed` con `beforeLoad` que hace `queryClient.ensureQueryData(meQuery)` → si da 401, redirige a `/login?redirect=…`; el usuario se pasa por el contexto del router a las rutas hijas.
@@ -50,6 +50,7 @@ Android ──Bearer JWT──────────────────�
 - Consultas parametrizadas con pgx; validación de entrada (longitudes) y `http.MaxBytesReader`.
 - Headers: CSP, `X-Content-Type-Options`, `Referrer-Policy`, `frame-ancestors 'none'`.
 - Contenedores distroless/non-root, secretos por Docker secrets/`.env` (en `.gitignore`), `.env.example` documentado.
+- **Rotación de contraseñas:** ldap y postgres aplican las contraseñas de los secretos **en cada arranque** (ldap sin conexión con `slapmodify` antes de iniciar slapd; postgres con `ALTER USER` y un healthcheck que espera a que esté aplicada). Rotar = cambiar `.env` + `make up`, sin borrar datos.
 - Logs estructurados (`log/slog`) que **nunca** incluyen contraseñas ni tokens (el único volcado del JWT es el `console.log` del navegador con el flag).
 - CI: `govulncheck`, `gosec`, `npm audit`, `gitleaks`.
 

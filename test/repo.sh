@@ -62,6 +62,14 @@ check_output "se actualiza al cambiar .env" '^nuevo$' cat "$tmp/secrets/x_passwo
 printf 'X_PASSWORD=YWJj=\n' > "$tmp/s.env"
 scripts/sync-secrets.sh "$tmp/s.env" "$tmp/secrets" >/dev/null 2>&1
 check_output "conserva un = final en el valor" '^YWJj=$' cat "$tmp/secrets/x_password"
+
+printf 'X_PASSWORD=YWJj=\nY_PASSWORD=otro\n' > "$tmp/s.env"
+check_output "informa los secretos nuevos o cambiados" '^y_password$' \
+  scripts/sync-secrets.sh "$tmp/s.env" "$tmp/secrets"
+check_no_output "no informa los que no cambiaron" 'x_password' \
+  scripts/sync-secrets.sh "$tmp/s.env" "$tmp/secrets"
+check_no_output "no informa nada si nada cambió" '.' \
+  scripts/sync-secrets.sh "$tmp/s.env" "$tmp/secrets"
 for bad in 'X_PASSWORD = valorsecreto' 'X_PASSWORD="valorsecreto"' $'X_PASSWORD=valorsecreto\r'; do
   printf '%s\n' "$bad" > "$tmp/bad.env"
   check_fails "rechaza una línea inválida: $(printf %q "$bad")" scripts/sync-secrets.sh "$tmp/bad.env" "$tmp/secrets"

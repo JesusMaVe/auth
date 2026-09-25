@@ -71,6 +71,38 @@ docker rm -fv "$retry" >/dev/null 2>&1
 docker volume rm "$vol" >/dev/null 2>&1
 rm -rf "$bad_seed"
 
+echo "ldap-image: rotación de contraseñas"
+# Mismo volumen, segundo arranque con otras contraseñas: deben aplicarse sin reinicializar.
+seed=$(mktemp -d)
+# shellcheck disable=SC2016  # el ${...} es literal: es la plantilla
+printf 'dn: uid=u1,ou=users,${LDAP_BASE_DN}\nobjectClass: inetOrgPerson\nuid: u1\ncn: U1\nsn: U1\nuserPassword: ${LDAP_SEED_USER_PASSWORD_HASH}\n' > "$seed/u.ldif"
+chmod -R a+rX "$seed"
+vol="auth-ldap-rot-$$"
+boot() { docker run -d "${BASE_ENV[@]}" -v "$vol:/var/lib/openldap" -v "$seed:/seed:ro" \
+  -e LDAP_ADMIN_PASSWORD="admin-$1" -e LDAP_SERVICE_PASSWORD="svc-$1" -e LDAP_SEED_USER_PASSWORD="seed-$1" "$IMG"; }
+whoami_as() { docker exec "$1" ldapwhoami -x -H "$URI" -D "$2" -w "$3"; }
+uuid_of_u1() { docker exec "$1" ldapsearch -x -LLL -H "$URI" -D "cn=admin,$BASE" -w "admin-$2" \
+  -b "uid=u1,ou=users,$BASE" -s base entryUUID | sed -n 's/^entryUUID: //p'; }
+
+rot=$(boot viejo)
+wait_healthy "$rot"
+uuid_before=$(uuid_of_u1 "$rot" viejo)
+docker rm -f "$rot" >/dev/null
+rot=$(boot nuevo)
+check "arranca con contraseñas nuevas sobre el mismo volumen" wait_healthy "$rot"
+check "admin: la contraseña nueva funciona" whoami_as "$rot" "cn=admin,$BASE" admin-nuevo
+check_fails "admin: la vieja ya no" whoami_as "$rot" "cn=admin,$BASE" admin-viejo
+check "servicio: la contraseña nueva funciona" whoami_as "$rot" "cn=svc,ou=services,$BASE" svc-nuevo
+check_fails "servicio: la vieja ya no" whoami_as "$rot" "cn=svc,ou=services,$BASE" svc-viejo
+check "usuario semilla: la contraseña nueva funciona" whoami_as "$rot" "uid=u1,ou=users,$BASE" seed-nuevo
+check_fails "usuario semilla: la vieja ya no" whoami_as "$rot" "uid=u1,ou=users,$BASE" seed-viejo
+check "no se reinicializó (entryUUID no vacío y sin cambios)" \
+  test -n "$uuid_before" -a "$(uuid_of_u1 "$rot" nuevo)" = "$uuid_before"
+check_no_output "los logs no muestran contraseñas" 'admin-nuevo|svc-nuevo|seed-nuevo' docker logs "$rot"
+docker rm -fv "$rot" >/dev/null 2>&1
+docker volume rm "$vol" >/dev/null 2>&1
+rm -rf "$seed"
+
 echo "ldap-image: arranque válido"
 WEIRD='p@$$ w/o\rd&"x'
 cid=$(docker run -d -v /var/lib/openldap "${BASE_ENV[@]}" \
