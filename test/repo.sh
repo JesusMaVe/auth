@@ -22,6 +22,23 @@ check "cada secreto es distinto" test "$a" != "$b"
 check_output "el archivo solo lo lee su dueño (600)" '^-rw-------' ls -l "$tmp/a.env"
 check_fails "no sobrescribe un .env existente" make -s env ENV_EXAMPLE="$tmp/example" ENV_FILE="$tmp/a.env"
 
+printf '# Los valores __GENERATE__ se reemplazan\nSECRET_A=__GENERATE__\n' > "$tmp/comment-example"
+check "un comentario que menciona __GENERATE__ no bloquea make env" \
+  make -s env ENV_EXAMPLE="$tmp/comment-example" ENV_FILE="$tmp/comment.env"
+check "la plantilla real .env.example genera un .env" make -s env ENV_FILE="$tmp/real.env"
+
+printf 'PLAIN=valor\r\nSECRET_A=__GENERATE__\r\n' > "$tmp/crlf-example"
+check "make env acepta una plantilla con CRLF" make -s env ENV_EXAMPLE="$tmp/crlf-example" ENV_FILE="$tmp/crlf.env"
+check_output "con CRLF también genera el secreto" '^SECRET_A=[0-9a-f]{48}$' cat "$tmp/crlf.env"
+check_no_output "con CRLF no quedan \\r en el archivo" $'\r' cat "$tmp/crlf.env"
+
+mkdir -p "$tmp/bin"
+printf '#!/bin/sh\nexit 1\n' > "$tmp/bin/openssl"
+chmod +x "$tmp/bin/openssl"
+check_fails "si openssl falla, make env falla" \
+  env PATH="$tmp/bin:$PATH" scripts/gen-env.sh "$tmp/example" "$tmp/noopenssl.env"
+check_fails "si openssl falla, no deja un .env a medias" test -e "$tmp/noopenssl.env"
+
 echo "repo: secretos como archivos"
 # shellcheck disable=SC2016  # el $ es parte literal del valor de prueba
 printf '# comentario\nPLAIN=valor\nX_PASSWORD=abc=d$e f\n' > "$tmp/s.env"
@@ -41,5 +58,15 @@ scripts/sync-secrets.sh "$tmp/s.env" "$tmp/secrets" >/dev/null 2>&1
 check "al actualizar se conserva el inodo del archivo" \
   test "$(inode "$tmp/secrets/x_password")" = "$inode_before"
 check_output "se actualiza al cambiar .env" '^nuevo$' cat "$tmp/secrets/x_password"
+
+printf 'X_PASSWORD=YWJj=\n' > "$tmp/s.env"
+scripts/sync-secrets.sh "$tmp/s.env" "$tmp/secrets" >/dev/null 2>&1
+check_output "conserva un = final en el valor" '^YWJj=$' cat "$tmp/secrets/x_password"
+for bad in 'X_PASSWORD = valorsecreto' 'X_PASSWORD="valorsecreto"' $'X_PASSWORD=valorsecreto\r'; do
+  printf '%s\n' "$bad" > "$tmp/bad.env"
+  check_fails "rechaza una línea inválida: $(printf %q "$bad")" scripts/sync-secrets.sh "$tmp/bad.env" "$tmp/secrets"
+  check_no_output "el error no muestra el valor: $(printf %q "$bad")" 'valorsecreto' \
+    scripts/sync-secrets.sh "$tmp/bad.env" "$tmp/secrets"
+done
 
 summary

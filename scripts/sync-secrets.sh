@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Escribe cada *_PASSWORD de un .env como archivo <dir>/<nombre en minúsculas>,
 # para montarlo como Docker secret (`file:`), lo que funciona también con contenedores read_only.
+# Falla (nombrando la variable, nunca su valor) ante líneas que compose y bash leerían distinto.
 set -euo pipefail
 
 src=${1:?uso: sync-secrets.sh <archivo .env> <directorio>}
@@ -11,8 +12,19 @@ dst=${2:?uso: sync-secrets.sh <archivo .env> <directorio>}
 install -d -m 700 "$dst"
 chmod 700 "$dst"
 
-while IFS='=' read -r key value || [[ -n $key ]]; do
-  [[ $key =~ ^[A-Z0-9_]+_PASSWORD$ ]] || continue
+while IFS= read -r line || [[ -n $line ]]; do
+  [[ $line =~ ^[[:space:]]*(#|$) ]] && continue
+  key=${line%%=*}
+  value=${line#*=}
+  [[ $key =~ _PASSWORD[[:space:]]*$ ]] || continue
+  if [[ ! $key =~ ^[A-Z0-9_]+$ ]]; then
+    echo "sync-secrets: $key: sin espacios alrededor de '='" >&2
+    exit 1
+  fi
+  if [[ $value == *$'\r'* || $value == \"* || $value == \'* ]]; then
+    echo "sync-secrets: $key: el valor no puede llevar comillas ni fin de línea CRLF" >&2
+    exit 1
+  fi
   file="$dst/$(tr '[:upper:]' '[:lower:]' <<< "$key")"
   # Se escribe en el mismo archivo (sin mv): Docker monta cada secreto por inodo.
   (umask 022 && printf '%s' "$value" > "$file")

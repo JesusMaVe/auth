@@ -49,6 +49,28 @@ check_fails "plantilla con variable no definida → sale con error" \
   run_once "${BASE_ENV[@]}" "${PW_ENV[@]}" -v "$seed:/seed:ro"
 rm -rf "$seed"
 
+echo "ldap-image: primer arranque fallido"
+# Un seed con un DN duplicado hace fallar slapadd -n 1 después de que -n 0 ya se cargó.
+bad_seed=$(mktemp -d)
+# shellcheck disable=SC2016  # el ${...} es literal: es la plantilla
+# cn=probe se carga antes del duplicado: si el reintento no empezara de cero, seguiría ahí.
+printf 'dn: cn=probe,ou=services,${LDAP_BASE_DN}\nobjectClass: organizationalRole\ncn: probe\n\ndn: ou=users,${LDAP_BASE_DN}\nobjectClass: organizationalUnit\nou: users\n' > "$bad_seed/dup.ldif"
+chmod -R a+rX "$bad_seed"
+vol="auth-ldap-test-$$"
+check_fails "un seed inválido hace fallar el primer arranque" \
+  run_once "${BASE_ENV[@]}" "${PW_ENV[@]}" -v "$vol:/var/lib/openldap" -v "$bad_seed:/seed:ro"
+retry=$(docker run -d "${BASE_ENV[@]}" "${PW_ENV[@]}" -v "$vol:/var/lib/openldap" "$IMG")
+check "el siguiente arranque reintenta desde cero y llega a healthy" wait_healthy "$retry"
+check "tras el reintento la cuenta de servicio se autentica" \
+  docker exec "$retry" ldapwhoami -x -H "$URI" -D "cn=svc,ou=services,$BASE" -w svc-test
+check_no_output "tras el reintento no queda nada del intento fallido" 'dn: cn=probe' \
+  docker exec "$retry" ldapsearch -x -LLL -H "$URI" -D "cn=admin,$BASE" -w admin-test -b "ou=services,$BASE" '(cn=probe)'
+check_output "control: el admin sí puede buscar en ou=services" "dn: cn=svc,ou=services,$BASE" \
+  docker exec "$retry" ldapsearch -x -LLL -H "$URI" -D "cn=admin,$BASE" -w admin-test -b "ou=services,$BASE" '(cn=svc)'
+docker rm -fv "$retry" >/dev/null 2>&1
+docker volume rm "$vol" >/dev/null 2>&1
+rm -rf "$bad_seed"
+
 echo "ldap-image: arranque válido"
 WEIRD='p@$$ w/o\rd&"x'
 cid=$(docker run -d -v /var/lib/openldap "${BASE_ENV[@]}" \
