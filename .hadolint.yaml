@@ -1,0 +1,4 @@
+ignored:
+  # Las versiones de los paquetes de Alpine se fijan mediante ALPINE_VERSION;
+  # fijar cada paquete rompe el build cuando Alpine publica parches de seguridad.
+  - DL3018

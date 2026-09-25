@@ -1,0 +1,61 @@
+# Servicios base. Toda la configuración sale de .env (ver .env.example);
+# ${VAR:?} hace fallar a compose si falta una variable.
+services:
+  postgres:
+    image: postgres:18.6-alpine3.24
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB no definida}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER no definida}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+      start_interval: 1s
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  ldap:
+    build: ./ldap
+    environment:
+      LDAP_BASE_DN: ${LDAP_BASE_DN:?LDAP_BASE_DN no definida}
+      LDAP_ORG_NAME: ${LDAP_ORG_NAME:?LDAP_ORG_NAME no definida}
+      LDAP_PORT: ${LDAP_PORT:?LDAP_PORT no definida}
+      LDAP_SERVICE_CN: ${LDAP_SERVICE_CN:?LDAP_SERVICE_CN no definida}
+      LDAP_DB_MAX_SIZE: ${LDAP_DB_MAX_SIZE:?LDAP_DB_MAX_SIZE no definida}
+      LDAP_LOG_LEVEL: ${LDAP_LOG_LEVEL:?LDAP_LOG_LEVEL no definida}
+      LDAP_ADMIN_PASSWORD_FILE: /run/secrets/ldap_admin_password
+      LDAP_SERVICE_PASSWORD_FILE: /run/secrets/ldap_service_password
+    secrets:
+      - ldap_admin_password
+      - ldap_service_password
+    volumes:
+      - ldapdata:/var/lib/openldap
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+# Archivos generados desde .env por `make secrets` (secrets/ está en .gitignore).
+secrets:
+  postgres_password:
+    file: ./secrets/postgres_password
+  ldap_admin_password:
+    file: ./secrets/ldap_admin_password
+  ldap_service_password:
+    file: ./secrets/ldap_service_password
+
+volumes:
+  pgdata:
+  ldapdata:

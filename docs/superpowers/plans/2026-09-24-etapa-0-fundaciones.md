@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Nada hardcodeado: la configuración sale de `.env`; en compose se usa `${VAR:?mensaje}` para fallar si falta. Las **versiones** de imágenes y herramientas sí se fijan en el código (Dockerfile, compose, Makefile), nunca en `.env`.
-- Los secretos nunca van como variables de entorno visibles: se pasan como Docker secrets (`*_FILE`). `.env` está en `.gitignore` y se crea con `make env` (secretos aleatorios de 48 caracteres hex).
+- Los secretos nunca van como variables de entorno visibles: se pasan como Docker secrets (`*_FILE`). `.env` está en `.gitignore` y se crea con `make env` (secretos aleatorios de 48 caracteres hex). `make secrets` (prerrequisito de `make up`) escribe cada `*_PASSWORD` de `.env` en `secrets/<nombre>` y compose los monta con `file:`, porque los secretos de tipo `environment:` no funcionan con contenedores `read_only`.
 - Los valores de `.env` no llevan comillas ni espacios (se leen desde bash y desde compose).
 - Contenedores non-root cuando la imagen lo permite; `no-new-privileges`; la imagen `ldap` corre `read_only` con `cap_drop: ALL`.
 - Los puertos de desarrollo se publican solo en `127.0.0.1`.
@@ -54,6 +54,7 @@
 | `ldap/templates/base.ldif` | Árbol base + cuenta de servicio | 2 |
 | `test/ldap-image.sh` | Tests de la imagen en aislamiento (`docker run`) | 2 |
 | `ldap/seed/users.ldif` | Usuarios y grupo semilla (solo dev) | 3 |
+| `scripts/sync-secrets.sh` | Escribir los `*_PASSWORD` de `.env` como archivos en `secrets/` | 3 |
 | `docker-compose.yml` | Servicios base postgres + ldap | 3 |
 | `docker-compose.dev.yml` | Puertos en localhost + seed | 3 |
 | `test/infra.sh` | Tests de integración del compose | 3 |
@@ -470,7 +471,8 @@ check "bind del admin con contraseña con caracteres especiales" \
   docker exec "$cid" ldapwhoami -x -H "$URI" -D "cn=admin,$BASE" -w "$WEIRD"
 check_fails "contraseña errónea es rechazada" \
   docker exec "$cid" ldapwhoami -x -H "$URI" -D "cn=svc,ou=services,$BASE" -w incorrecta
-check_output "el hash guardado es ARGON2" '\{ARGON2\}' \
+# userPassword es binario → ldapsearch lo devuelve en base64; e0FSR09OMn0 = "{ARGON2}"
+check_output "el hash guardado es ARGON2" '^userPassword:: e0FSR09OMn0' \
   docker exec "$cid" ldapsearch -x -LLL -H "$URI" -D "cn=admin,$BASE" -w "$WEIRD" \
     -b "cn=svc,ou=services,$BASE" userPassword -o ldif-wrap=no
 # shellcheck disable=SC2016  # $(id -u) debe expandirse dentro del contenedor
@@ -516,7 +518,6 @@ Expected: FAIL en `docker build` (no existe `ldap/Dockerfile`).
 dn: cn=config
 objectClass: olcGlobal
 cn: config
-olcPasswordHash: {ARGON2}
 
 dn: cn=module{0},cn=config
 objectClass: olcModuleList
@@ -530,13 +531,16 @@ objectClass: olcSchemaConfig
 cn: schema
 
 include: file:///etc/openldap/schema/core.ldif
+
 include: file:///etc/openldap/schema/cosine.ldif
+
 include: file:///etc/openldap/schema/inetorgperson.ldif
 
 dn: olcDatabase={-1}frontend,cn=config
 objectClass: olcDatabaseConfig
 objectClass: olcFrontendConfig
 olcDatabase: {-1}frontend
+olcPasswordHash: {ARGON2}
 olcSizeLimit: 500
 olcAccess: {0}to dn.base="" by * read
 olcAccess: {1}to dn.base="cn=Subschema" by * read
@@ -623,7 +627,7 @@ require() {
 # Convierte cada LDAP_*_PASSWORD_FILE en LDAP_*_PASSWORD (Docker secrets).
 load_secret_files() {
   for fvar in $(env | sed -n 's/^\(LDAP_[A-Z0-9_]*_PASSWORD_FILE\)=.*/\1/p'); do
-    eval "file=\${$fvar}"
+    file=$(printenv "$fvar")
     [ -r "$file" ] || die "$fvar apunta a un archivo que no se puede leer"
     val=$(cat "$file")
     export "${fvar%_FILE}=$val"
@@ -649,6 +653,7 @@ forget_passwords() {
 
 # render <plantilla>: sustituye solo los ${VAR} que usa la plantilla; falla si alguno no está definido.
 render() {
+  # shellcheck disable=SC2016  # buscamos el texto literal ${VAR}
   vars=$(grep -o '\${[A-Za-z_][A-Za-z0-9_]*}' "$1" | sort -u || true)
   for placeholder in $vars; do
     var=${placeholder#??}
@@ -676,8 +681,8 @@ initialize() {
     done
   } > "$work/data.ldif"
 
-  slapadd -q -n 0 -F "$CONFIG_DIR" -l "$work/config.ldif"
-  slapadd -q -n 1 -F "$CONFIG_DIR" -l "$work/data.ldif"
+  slapadd -n 0 -F "$CONFIG_DIR" -l "$work/config.ldif"
+  slapadd -n 1 -F "$CONFIG_DIR" -l "$work/data.ldif"
   rm -rf "$work"
   touch "$MARKER"
 }
@@ -720,11 +725,12 @@ RUN apk add --no-cache \
 COPY --chmod=0755 entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY templates/ /etc/openldap/templates/
 
-USER ldap
+# uid/gid del usuario `ldap` que crea el paquete openldap de Alpine (numérico: no depende de /etc/passwd)
+USER 100:101
 VOLUME /var/lib/openldap
 
 HEALTHCHECK --interval=10s --timeout=3s --start-period=30s --start-interval=1s \
-  CMD ldapsearch -x -H "ldap://127.0.0.1:${LDAP_PORT}" -b "" -s base namingContexts >/dev/null || exit 1
+  CMD ["sh", "-c", "ldapsearch -x -H \"ldap://127.0.0.1:${LDAP_PORT}\" -b '' -s base namingContexts >/dev/null"]
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 ```
@@ -854,7 +860,10 @@ chmod +x test/infra.sh
 ```makefile
 .PHONY: help env up down clean logs test test-repo test-ldap-image test-infra lint secrets-scan
 
-up: ## Levanta los servicios de desarrollo y espera a que estén healthy
+secrets: ## Escribe los *_PASSWORD de .env como archivos en secrets/ (Docker secrets)
+	@scripts/sync-secrets.sh "$(ENV_FILE)" secrets
+
+up: secrets ## Levanta los servicios de desarrollo y espera a que estén healthy
 	$(COMPOSE) up -d --build --wait
 
 down: ## Detiene los servicios
@@ -965,13 +974,14 @@ services:
       - no-new-privileges:true
     restart: unless-stopped
 
+# Archivos generados desde .env por `make secrets` (secrets/ está en .gitignore).
 secrets:
   postgres_password:
-    environment: POSTGRES_PASSWORD
+    file: ./secrets/postgres_password
   ldap_admin_password:
-    environment: LDAP_ADMIN_PASSWORD
+    file: ./secrets/ldap_admin_password
   ldap_service_password:
-    environment: LDAP_SERVICE_PASSWORD
+    file: ./secrets/ldap_service_password
 
 volumes:
   pgdata:
@@ -999,7 +1009,7 @@ services:
 
 secrets:
   ldap_seed_user_password:
-    environment: LDAP_SEED_USER_PASSWORD
+    file: ./secrets/ldap_seed_user_password
 ```
 
 - [ ] **Step 7: Implementar `ldap/seed/users.ldif`**

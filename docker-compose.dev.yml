@@ -1,0 +1,19 @@
+# Solo desarrollo: publica los puertos en localhost y carga los usuarios semilla.
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:?POSTGRES_HOST_PORT no definida}:5432"
+
+  ldap:
+    ports:
+      - "127.0.0.1:${LDAP_HOST_PORT:?LDAP_HOST_PORT no definida}:${LDAP_PORT:?LDAP_PORT no definida}"
+    environment:
+      LDAP_SEED_USER_PASSWORD_FILE: /run/secrets/ldap_seed_user_password
+    secrets:
+      - ldap_seed_user_password
+    volumes:
+      - ./ldap/seed:/seed:ro
+
+secrets:
+  ldap_seed_user_password:
+    file: ./secrets/ldap_seed_user_password
