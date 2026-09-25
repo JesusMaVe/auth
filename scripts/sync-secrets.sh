@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Escribe cada *_PASSWORD de un .env como archivo <dir>/<nombre en minúsculas>,
 # para montarlo como Docker secret (`file:`), lo que funciona también con contenedores read_only.
+# Imprime el nombre de cada secreto nuevo o cambiado (uno por línea).
 # Falla (nombrando la variable, nunca su valor) ante líneas que compose y bash leerían distinto.
 set -euo pipefail
 
@@ -25,7 +26,11 @@ while IFS= read -r line || [[ -n $line ]]; do
     echo "sync-secrets: $key: el valor no puede llevar comillas ni fin de línea CRLF" >&2
     exit 1
   fi
-  file="$dst/$(tr '[:upper:]' '[:lower:]' <<< "$key")"
+  name=$(tr '[:upper:]' '[:lower:]' <<< "$key")
+  file="$dst/$name"
+  # Solo se escriben (e informan) los que cambian: `make up` recrea los contenedores si hay alguno.
+  [[ -f $file && $(< "$file") == "$value" ]] && continue
   # Se escribe en el mismo archivo (sin mv): Docker monta cada secreto por inodo.
   (umask 022 && printf '%s' "$value" > "$file")
+  echo "$name"
 done < "$src"
