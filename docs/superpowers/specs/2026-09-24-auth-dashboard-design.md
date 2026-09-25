@@ -8,7 +8,7 @@ Reglas del proyecto: desarrollo por etapas, **tests en cada feature (TDD)**, **n
 ### Decisiones ya tomadas
 | Tema | Decisión |
 |---|---|
-| Servicio LDAP+JWT | Se crea: contenedor `ldap` (OpenLDAP con usuarios semilla en `.ldif`) + contenedor `auth-svc` (Go) que hace el bind LDAP y firma el JWT |
+| Servicio LDAP+JWT | Se crea: contenedor `ldap` con **imagen OpenLDAP propia** (construida por nosotros, sin imágenes de terceros) + contenedor `auth-svc` (Go) que hace el bind LDAP y firma el JWT |
 | JWT en el navegador | Solo con `EXPOSE_JWT_TO_CLIENT=true` (en `false` en prod): `/login` también lo devuelve en el body; React decodifica el payload **sin verificarlo**, hace `console.log` y lo descarta. La cookie sigue siendo la única forma de autenticarse en la web |
 | Elemento del listado | Genérico: `id, title, description, created_by, created_at` |
 | Agregar elemento | Ruta propia `/items/new`; al guardar se invalida la query del listado y se vuelve a `/dashboard` |
@@ -24,6 +24,7 @@ Android ──Bearer JWT──────────────────�
                                                   auth-svc (Go) ──bind──▶ ldap (OpenLDAP)
 ```
 
+- **ldap** (imagen propia en `/ldap`): Alpine + paquetes oficiales de OpenLDAP 2.6 (`slapd`, backend `mdb`). Un `entrypoint.sh` genera la configuración `cn=config` desde variables de entorno **en el primer arranque** (idempotente en reinicios), hashea las contraseñas con `slappasswd` (ARGON2) y carga el árbol base (`ou=users`, `ou=groups`, `ou=services` + cuenta de servicio de auth-svc). Las contraseñas llegan por `*_FILE` (Docker secrets). Los usuarios semilla de desarrollo se montan solo en `docker-compose.dev.yml`. Corre como non-root, con filesystem de solo lectura y healthcheck.
 - **auth-svc**: `POST /token {username,password}` → bind LDAP (`go-ldap/ldap/v3`, con escape de filtros) → JWT firmado con **EdDSA/RS256**. La clave privada solo la tiene auth-svc; la API recibe la **clave pública** (Docker secret). Red interna, sin publicar puerto.
 - **api** (net/http estándar + `CrossOriginProtection`):
   - `POST /api/auth/login` → llama a auth-svc, verifica el JWT con la clave pública, `scs.RenewToken`, guarda el usuario en la sesión, pone la cookie. Devuelve el JWT en el body solo si el flag está activo.
@@ -44,6 +45,7 @@ Android ──Bearer JWT──────────────────�
 - `http.CrossOriginProtection` en rutas que cambian estado; orígenes de confianza por env.
 - Rate limit en `/login` y `/token` (por IP y usuario); errores genéricos ("credenciales inválidas") para no revelar si el usuario existe.
 - Escape de filtros LDAP; LDAPS/StartTLS configurable.
+- Imagen LDAP: ACLs de mínimo privilegio (anónimo solo puede autenticar y leer el Root DSE; la cuenta de servicio solo lee `ou=users`/`ou=groups`; cada usuario solo se ve a sí mismo; `userPassword` nunca es legible), `cn=config` inaccesible en runtime, non-root, `read_only`, `cap_drop: ALL`.
 - JWT: algoritmo fijo en el parser (evitar `alg` confusion), `exp`/`iat`/`iss`/`aud` obligatorios, TTL corto por env.
 - Consultas parametrizadas con pgx; validación de entrada (longitudes) y `http.MaxBytesReader`.
 - Headers: CSP, `X-Content-Type-Options`, `Referrer-Policy`, `frame-ancestors 'none'`.
@@ -59,7 +61,9 @@ Un paquete `config` por servicio que lee env vars, valida y **falla al arrancar*
 /auth-svc      Go: cmd/, internal/{config,ldap,token,httpapi}
 /api           Go: cmd/, internal/{config,db,migrations,session,auth,items,httpx(middleware)}
 /frontend      Vite React: src/{routes,api,features/{auth,items},components}
-/deploy        ldap/seed.ldif, nginx.conf
+/ldap          Imagen OpenLDAP propia: Dockerfile, entrypoint.sh, templates/*.ldif, seed/ (solo dev)
+/deploy        nginx.conf
+/test          Smoke tests de infraestructura (shell)
 docker-compose.yml, docker-compose.dev.yml, .env.example, Makefile, .github/workflows
 ```
 
@@ -68,13 +72,13 @@ Cada issue incluye: descripción, criterios de aceptación, **tests requeridos**
 
 **Etapa 0 – Fundaciones**
 1. Inicializar repo, `.gitignore`, `.env.example`, `README`, `CLAUDE.md`, Makefile
-2. `docker-compose` base (postgres, ldap con seed) + healthchecks
-3. CI en GitHub Actions: lint + test + escaneos de seguridad por servicio
+2. Imagen OpenLDAP propia + `docker-compose` base (postgres, ldap con seed de dev) + healthchecks *(test: smoke tests de bind, ACLs, fail-fast y reinicio)*
+3. CI en GitHub Actions: lint (shellcheck, hadolint), smoke tests de infra y `gitleaks`, con un job agregador `ci` como único check requerido. Los jobs de Go y frontend se agregan en la etapa que crea cada servicio (YAGNI)
 4. Protección de rama `main`, plantillas de issue/PR, labels
 
 **Etapa 1 – Servicio de identidad (auth-svc)**
 5. `config` con validación fail-fast *(test: faltan vars → error)*
-6. Cliente LDAP: bind + búsqueda de atributos *(test: testcontainers con OpenLDAP; credenciales válidas/erróneas; inyección en filtros)*
+6. Cliente LDAP: bind + búsqueda de atributos *(test: testcontainers con nuestra imagen OpenLDAP; credenciales válidas/erróneas; inyección en filtros)*
 7. Emisor de JWT *(test: claims, exp, firma verificable con la pública)*
 8. `POST /token` + rate limit + Dockerfile *(test: handler con httptest)*
 
