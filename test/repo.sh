@@ -22,6 +22,11 @@ check "cada secreto es distinto" test "$a" != "$b"
 check_output "el archivo solo lo lee su dueño (600)" '^-rw-------' ls -l "$tmp/a.env"
 check_fails "no sobrescribe un .env existente" make -s env ENV_EXAMPLE="$tmp/example" ENV_FILE="$tmp/a.env"
 
+printf '# Los valores __GENERATE__ se reemplazan\nSECRET_A=__GENERATE__\n' > "$tmp/comment-example"
+check "un comentario que menciona __GENERATE__ no bloquea make env" \
+  make -s env ENV_EXAMPLE="$tmp/comment-example" ENV_FILE="$tmp/comment.env"
+check "la plantilla real .env.example genera un .env" make -s env ENV_FILE="$tmp/real.env"
+
 printf 'PLAIN=valor\r\nSECRET_A=__GENERATE__\r\n' > "$tmp/crlf-example"
 check "make env acepta una plantilla con CRLF" make -s env ENV_EXAMPLE="$tmp/crlf-example" ENV_FILE="$tmp/crlf.env"
 check_output "con CRLF también genera el secreto" '^SECRET_A=[0-9a-f]{48}$' cat "$tmp/crlf.env"

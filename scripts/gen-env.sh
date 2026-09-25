@@ -27,7 +27,7 @@ while IFS= read -r line || [[ -n $line ]]; do
   fi
 done < "$src" > "$tmp"
 
-if grep -q '__GENERATE__' "$tmp"; then
+if grep -q '=__GENERATE__$' "$tmp"; then
   echo "gen-env: quedaron marcadores __GENERATE__ sin reemplazar" >&2
   exit 1
 fi
