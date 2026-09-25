@@ -470,7 +470,8 @@ check "bind del admin con contraseña con caracteres especiales" \
   docker exec "$cid" ldapwhoami -x -H "$URI" -D "cn=admin,$BASE" -w "$WEIRD"
 check_fails "contraseña errónea es rechazada" \
   docker exec "$cid" ldapwhoami -x -H "$URI" -D "cn=svc,ou=services,$BASE" -w incorrecta
-check_output "el hash guardado es ARGON2" '\{ARGON2\}' \
+# userPassword es binario → ldapsearch lo devuelve en base64; e0FSR09OMn0 = "{ARGON2}"
+check_output "el hash guardado es ARGON2" '^userPassword:: e0FSR09OMn0' \
   docker exec "$cid" ldapsearch -x -LLL -H "$URI" -D "cn=admin,$BASE" -w "$WEIRD" \
     -b "cn=svc,ou=services,$BASE" userPassword -o ldif-wrap=no
 # shellcheck disable=SC2016  # $(id -u) debe expandirse dentro del contenedor
@@ -516,7 +517,6 @@ Expected: FAIL en `docker build` (no existe `ldap/Dockerfile`).
 dn: cn=config
 objectClass: olcGlobal
 cn: config
-olcPasswordHash: {ARGON2}
 
 dn: cn=module{0},cn=config
 objectClass: olcModuleList
@@ -530,13 +530,16 @@ objectClass: olcSchemaConfig
 cn: schema
 
 include: file:///etc/openldap/schema/core.ldif
+
 include: file:///etc/openldap/schema/cosine.ldif
+
 include: file:///etc/openldap/schema/inetorgperson.ldif
 
 dn: olcDatabase={-1}frontend,cn=config
 objectClass: olcDatabaseConfig
 objectClass: olcFrontendConfig
 olcDatabase: {-1}frontend
+olcPasswordHash: {ARGON2}
 olcSizeLimit: 500
 olcAccess: {0}to dn.base="" by * read
 olcAccess: {1}to dn.base="cn=Subschema" by * read
@@ -623,7 +626,7 @@ require() {
 # Convierte cada LDAP_*_PASSWORD_FILE en LDAP_*_PASSWORD (Docker secrets).
 load_secret_files() {
   for fvar in $(env | sed -n 's/^\(LDAP_[A-Z0-9_]*_PASSWORD_FILE\)=.*/\1/p'); do
-    eval "file=\${$fvar}"
+    file=$(printenv "$fvar")
     [ -r "$file" ] || die "$fvar apunta a un archivo que no se puede leer"
     val=$(cat "$file")
     export "${fvar%_FILE}=$val"
@@ -649,6 +652,7 @@ forget_passwords() {
 
 # render <plantilla>: sustituye solo los ${VAR} que usa la plantilla; falla si alguno no está definido.
 render() {
+  # shellcheck disable=SC2016  # buscamos el texto literal ${VAR}
   vars=$(grep -o '\${[A-Za-z_][A-Za-z0-9_]*}' "$1" | sort -u || true)
   for placeholder in $vars; do
     var=${placeholder#??}
@@ -676,8 +680,8 @@ initialize() {
     done
   } > "$work/data.ldif"
 
-  slapadd -q -n 0 -F "$CONFIG_DIR" -l "$work/config.ldif"
-  slapadd -q -n 1 -F "$CONFIG_DIR" -l "$work/data.ldif"
+  slapadd -n 0 -F "$CONFIG_DIR" -l "$work/config.ldif"
+  slapadd -n 1 -F "$CONFIG_DIR" -l "$work/data.ldif"
   rm -rf "$work"
   touch "$MARKER"
 }
@@ -720,11 +724,12 @@ RUN apk add --no-cache \
 COPY --chmod=0755 entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY templates/ /etc/openldap/templates/
 
-USER ldap
+# uid/gid del usuario `ldap` que crea el paquete openldap de Alpine (numérico: no depende de /etc/passwd)
+USER 100:101
 VOLUME /var/lib/openldap
 
 HEALTHCHECK --interval=10s --timeout=3s --start-period=30s --start-interval=1s \
-  CMD ldapsearch -x -H "ldap://127.0.0.1:${LDAP_PORT}" -b "" -s base namingContexts >/dev/null || exit 1
+  CMD ["sh", "-c", "ldapsearch -x -H \"ldap://127.0.0.1:${LDAP_PORT}\" -b '' -s base namingContexts >/dev/null"]
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 ```

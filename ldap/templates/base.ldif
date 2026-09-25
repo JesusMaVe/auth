@@ -1,0 +1,25 @@
+dn: ${LDAP_BASE_DN}
+objectClass: top
+objectClass: dcObject
+objectClass: organization
+dc: ${LDAP_DC}
+o: ${LDAP_ORG_NAME}
+
+dn: ou=users,${LDAP_BASE_DN}
+objectClass: organizationalUnit
+ou: users
+
+dn: ou=groups,${LDAP_BASE_DN}
+objectClass: organizationalUnit
+ou: groups
+
+dn: ou=services,${LDAP_BASE_DN}
+objectClass: organizationalUnit
+ou: services
+
+dn: cn=${LDAP_SERVICE_CN},ou=services,${LDAP_BASE_DN}
+objectClass: organizationalRole
+objectClass: simpleSecurityObject
+cn: ${LDAP_SERVICE_CN}
+description: Cuenta de solo lectura para auth-svc
+userPassword: ${LDAP_SERVICE_PASSWORD_HASH}

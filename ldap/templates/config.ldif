@@ -1,0 +1,52 @@
+dn: cn=config
+objectClass: olcGlobal
+cn: config
+
+dn: cn=module{0},cn=config
+objectClass: olcModuleList
+cn: module{0}
+olcModulePath: /usr/lib/openldap
+olcModuleLoad: back_mdb.so
+olcModuleLoad: argon2.so
+
+dn: cn=schema,cn=config
+objectClass: olcSchemaConfig
+cn: schema
+
+include: file:///etc/openldap/schema/core.ldif
+
+include: file:///etc/openldap/schema/cosine.ldif
+
+include: file:///etc/openldap/schema/inetorgperson.ldif
+
+dn: olcDatabase={-1}frontend,cn=config
+objectClass: olcDatabaseConfig
+objectClass: olcFrontendConfig
+olcDatabase: {-1}frontend
+olcPasswordHash: {ARGON2}
+olcSizeLimit: 500
+olcAccess: {0}to dn.base="" by * read
+olcAccess: {1}to dn.base="cn=Subschema" by * read
+
+dn: olcDatabase={0}config,cn=config
+objectClass: olcDatabaseConfig
+olcDatabase: {0}config
+olcAccess: {0}to * by * none
+
+dn: olcDatabase={1}mdb,cn=config
+objectClass: olcDatabaseConfig
+objectClass: olcMdbConfig
+olcDatabase: {1}mdb
+olcDbDirectory: /var/lib/openldap/data
+olcSuffix: ${LDAP_BASE_DN}
+olcRootDN: cn=admin,${LDAP_BASE_DN}
+olcRootPW: ${LDAP_ADMIN_PASSWORD_HASH}
+olcDbMaxSize: ${LDAP_DB_MAX_SIZE}
+olcDbIndex: objectClass eq
+olcDbIndex: uid eq
+olcDbIndex: member eq
+olcAccess: {0}to attrs=userPassword by anonymous auth by * none
+olcAccess: {1}to dn.subtree="ou=users,${LDAP_BASE_DN}" by dn.exact="cn=${LDAP_SERVICE_CN},ou=services,${LDAP_BASE_DN}" read by self read by anonymous auth by * none
+olcAccess: {2}to dn.subtree="ou=groups,${LDAP_BASE_DN}" by dn.exact="cn=${LDAP_SERVICE_CN},ou=services,${LDAP_BASE_DN}" read by * none
+olcAccess: {3}to dn.subtree="ou=services,${LDAP_BASE_DN}" by anonymous auth by * none
+olcAccess: {4}to * by * none
