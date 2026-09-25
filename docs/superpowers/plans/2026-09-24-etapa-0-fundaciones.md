@@ -818,7 +818,8 @@ svc_modify_alice() {
   printf 'dn: %s\nchangetype: modify\nreplace: mail\nmail: x@example.org\n' "$ALICE" \
     | in_ldap ldapmodify -x -H "$URI" -D "$SVC_DN" -y "$SVC_PW"
 }
-init_count() { "${DC[@]}" logs ldap 2>&1 | grep -c 'primer arranque'; }
+# entryUUID de alice: una reinicialización lo regeneraría (no depende de los logs ni de si compose recrea el contenedor).
+alice_uuid() { as_svc -b "$ALICE" -s base entryUUID | sed -n 's/^entryUUID: //p'; }
 
 echo "infra: postgres"
 check_output "responde a select 1" '^1$' \
@@ -842,10 +843,11 @@ check_no_output "alice no puede leer a bob" 'dn: uid=bob' as_alice -b "$USERS" '
 check_no_output "cn=config no es legible" 'olcRootPW' as_anon -b cn=config
 
 echo "infra: reinicio"
-before=$(init_count)
+before=$(alice_uuid)
 "${DC[@]}" restart ldap >/dev/null 2>&1
 "${DC[@]}" up -d --wait ldap >/dev/null 2>&1
-check "no se vuelve a inicializar al reiniciar" test "$(init_count)" = "$before"
+check "hay un entryUUID de referencia" test -n "$before"
+check "no se vuelve a inicializar al reiniciar" test "$(alice_uuid)" = "$before"
 check_output "alice sigue autenticándose tras el reinicio" "dn:${ALICE}" alice_whoami
 
 summary
