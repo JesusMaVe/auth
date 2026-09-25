@@ -155,7 +155,7 @@ summary() {
 #!/usr/bin/env bash
 # Tests del esqueleto del repo: .gitignore y generación de .env.
 set -u
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 # shellcheck source=test/lib.sh
 . test/lib.sh
 
@@ -410,7 +410,7 @@ git switch main && git pull && git switch -c feat/2-ldap-image-compose
 # Tests de la imagen ldap en aislamiento (docker run, sin compose).
 # Usa valores de prueba propios; no depende de .env.
 set -u
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 # shellcheck source=test/lib.sh
 . test/lib.sh
 
@@ -789,7 +789,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 # Tests de integración del compose de desarrollo (postgres + ldap con seed).
 # Requiere los servicios levantados: make test-infra lo hace.
 set -u
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 # shellcheck source=test/lib.sh
 . test/lib.sh
 load_env

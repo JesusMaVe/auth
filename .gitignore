@@ -1,0 +1,18 @@
+# Secretos y configuración local
+.env
+*.env
+!.env.example
+*.pem
+*.key
+secrets/
+
+# Dependencias y builds
+node_modules/
+dist/
+bin/
+coverage/
+
+# Editor / SO
+.DS_Store
+.idea/
+.vscode/
