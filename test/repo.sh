@@ -22,4 +22,24 @@ check "cada secreto es distinto" test "$a" != "$b"
 check_output "el archivo solo lo lee su dueño (600)" '^-rw-------' ls -l "$tmp/a.env"
 check_fails "no sobrescribe un .env existente" make -s env ENV_EXAMPLE="$tmp/example" ENV_FILE="$tmp/a.env"
 
+echo "repo: secretos como archivos"
+# shellcheck disable=SC2016  # el $ es parte literal del valor de prueba
+printf '# comentario\nPLAIN=valor\nX_PASSWORD=abc=d$e f\n' > "$tmp/s.env"
+check "sync-secrets escribe los archivos" scripts/sync-secrets.sh "$tmp/s.env" "$tmp/secrets"
+check_output "el directorio solo lo abre su dueño (700)" '^drwx------' ls -ld "$tmp/secrets"
+# shellcheck disable=SC2016  # el $ es parte literal del valor de prueba
+check "cada *_PASSWORD es un archivo con su valor exacto, sin salto de línea" \
+  test "$(od -c "$tmp/secrets/x_password" | head -1)" = "$(printf 'abc=d$e f' | od -c | head -1)"
+check_fails "las variables que no son *_PASSWORD no se escriben" test -e "$tmp/secrets/plain"
+# inode <archivo>: ls -i es portable entre macOS y Linux (stat no lo es).
+# shellcheck disable=SC2012
+inode() { ls -i "$1" | awk '{print $1}'; }
+inode_before=$(inode "$tmp/secrets/x_password")
+printf 'X_PASSWORD=nuevo\n' > "$tmp/s.env"
+scripts/sync-secrets.sh "$tmp/s.env" "$tmp/secrets" >/dev/null 2>&1
+# Docker monta cada secreto por inodo: si cambiara, el contenedor en marcha dejaría de verlo.
+check "al actualizar se conserva el inodo del archivo" \
+  test "$(inode "$tmp/secrets/x_password")" = "$inode_before"
+check_output "se actualiza al cambiar .env" '^nuevo$' cat "$tmp/secrets/x_password"
+
 summary

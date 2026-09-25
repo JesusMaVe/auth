@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Nada hardcodeado: la configuración sale de `.env`; en compose se usa `${VAR:?mensaje}` para fallar si falta. Las **versiones** de imágenes y herramientas sí se fijan en el código (Dockerfile, compose, Makefile), nunca en `.env`.
-- Los secretos nunca van como variables de entorno visibles: se pasan como Docker secrets (`*_FILE`). `.env` está en `.gitignore` y se crea con `make env` (secretos aleatorios de 48 caracteres hex).
+- Los secretos nunca van como variables de entorno visibles: se pasan como Docker secrets (`*_FILE`). `.env` está en `.gitignore` y se crea con `make env` (secretos aleatorios de 48 caracteres hex). `make secrets` (prerrequisito de `make up`) escribe cada `*_PASSWORD` de `.env` en `secrets/<nombre>` y compose los monta con `file:`, porque los secretos de tipo `environment:` no funcionan con contenedores `read_only`.
 - Los valores de `.env` no llevan comillas ni espacios (se leen desde bash y desde compose).
 - Contenedores non-root cuando la imagen lo permite; `no-new-privileges`; la imagen `ldap` corre `read_only` con `cap_drop: ALL`.
 - Los puertos de desarrollo se publican solo en `127.0.0.1`.
@@ -54,6 +54,7 @@
 | `ldap/templates/base.ldif` | Árbol base + cuenta de servicio | 2 |
 | `test/ldap-image.sh` | Tests de la imagen en aislamiento (`docker run`) | 2 |
 | `ldap/seed/users.ldif` | Usuarios y grupo semilla (solo dev) | 3 |
+| `scripts/sync-secrets.sh` | Escribir los `*_PASSWORD` de `.env` como archivos en `secrets/` | 3 |
 | `docker-compose.yml` | Servicios base postgres + ldap | 3 |
 | `docker-compose.dev.yml` | Puertos en localhost + seed | 3 |
 | `test/infra.sh` | Tests de integración del compose | 3 |
@@ -859,7 +860,10 @@ chmod +x test/infra.sh
 ```makefile
 .PHONY: help env up down clean logs test test-repo test-ldap-image test-infra lint secrets-scan
 
-up: ## Levanta los servicios de desarrollo y espera a que estén healthy
+secrets: ## Escribe los *_PASSWORD de .env como archivos en secrets/ (Docker secrets)
+	@scripts/sync-secrets.sh "$(ENV_FILE)" secrets
+
+up: secrets ## Levanta los servicios de desarrollo y espera a que estén healthy
 	$(COMPOSE) up -d --build --wait
 
 down: ## Detiene los servicios
@@ -970,13 +974,14 @@ services:
       - no-new-privileges:true
     restart: unless-stopped
 
+# Archivos generados desde .env por `make secrets` (secrets/ está en .gitignore).
 secrets:
   postgres_password:
-    environment: POSTGRES_PASSWORD
+    file: ./secrets/postgres_password
   ldap_admin_password:
-    environment: LDAP_ADMIN_PASSWORD
+    file: ./secrets/ldap_admin_password
   ldap_service_password:
-    environment: LDAP_SERVICE_PASSWORD
+    file: ./secrets/ldap_service_password
 
 volumes:
   pgdata:
@@ -1004,7 +1009,7 @@ services:
 
 secrets:
   ldap_seed_user_password:
-    environment: LDAP_SEED_USER_PASSWORD
+    file: ./secrets/ldap_seed_user_password
 ```
 
 - [ ] **Step 7: Implementar `ldap/seed/users.ldif`**
