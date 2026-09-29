@@ -76,7 +76,7 @@ frontend/   src/{routes,api,features/{auth,items},components}, deploy/nginx.conf
 ```
 
 ## Etapas → issues (un issue por feature)
-Cada issue incluye: descripción, criterios de aceptación, **tests requeridos** y checklist de seguridad aplicable. Las issues de `api` y `frontend` nacieron en `auth` y se transfieren a su repo.
+Cada issue incluye: descripción, criterios de aceptación, **tests requeridos** y checklist de seguridad aplicable. Las issues de `api` y `frontend` nacieron en `auth` y ya viven en su repo (`JesusMaVe/api#1–6`, `JesusMaVe/frontend#1–8`).
 
 **Etapa 0 – Fundaciones** *(auth: hecha)*
 - auth: repo, Makefile, imagen OpenLDAP, CI, protección de `main`, plantillas, rotación.
