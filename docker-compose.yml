@@ -40,6 +40,37 @@ services:
       - no-new-privileges:true
     restart: unless-stopped
 
+  auth-svc:
+    build: ./auth-svc
+    environment:
+      AUTH_SVC_PORT: ${AUTH_SVC_PORT:?AUTH_SVC_PORT no definida}
+      LOG_LEVEL: ${AUTH_SVC_LOG_LEVEL:?AUTH_SVC_LOG_LEVEL no definida}
+      LDAP_URL: ldap://ldap:${LDAP_PORT:?LDAP_PORT no definida}
+      LDAP_BIND_DN: cn=${LDAP_SERVICE_CN:?LDAP_SERVICE_CN no definida},ou=services,${LDAP_BASE_DN:?LDAP_BASE_DN no definida}
+      LDAP_BIND_PASSWORD_FILE: /run/secrets/ldap_service_password
+      LDAP_USERS_DN: ou=users,${LDAP_BASE_DN:?LDAP_BASE_DN no definida}
+      LDAP_GROUPS_DN: ou=groups,${LDAP_BASE_DN:?LDAP_BASE_DN no definida}
+      LDAP_STARTTLS: ${LDAP_STARTTLS:?LDAP_STARTTLS no definida}
+      LDAP_TIMEOUT: ${LDAP_TIMEOUT:?LDAP_TIMEOUT no definida}
+      JWT_PRIVATE_KEY_FILE: /run/secrets/jwt_private_key
+      JWT_ISSUER: ${JWT_ISSUER:?JWT_ISSUER no definida}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:?JWT_AUDIENCE no definida}
+      JWT_TTL: ${JWT_TTL:?JWT_TTL no definida}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:?RATE_LIMIT_PER_MINUTE no definida}
+      RATE_LIMIT_BURST: ${RATE_LIMIT_BURST:?RATE_LIMIT_BURST no definida}
+    secrets:
+      - ldap_service_password
+      - jwt_private_key
+    depends_on:
+      ldap:
+        condition: service_healthy
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
 # Archivos generados desde .env por `make secrets` (secrets/ está en .gitignore).
 secrets:
   postgres_password:
@@ -48,6 +79,8 @@ secrets:
     file: ./secrets/ldap_admin_password
   ldap_service_password:
     file: ./secrets/ldap_service_password
+  jwt_private_key:
+    file: ./secrets/jwt_private_key
 
 volumes:
   pgdata:

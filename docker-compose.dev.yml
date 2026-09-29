@@ -14,6 +14,10 @@ services:
     volumes:
       - ./ldap/seed:/seed:ro
 
+  auth-svc:
+    ports:
+      - "127.0.0.1:${AUTH_SVC_HOST_PORT:?AUTH_SVC_HOST_PORT no definida}:${AUTH_SVC_PORT:?AUTH_SVC_PORT no definida}"
+
 secrets:
   ldap_seed_user_password:
     file: ./secrets/ldap_seed_user_password

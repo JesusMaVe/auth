@@ -27,6 +27,10 @@ check "make up aplica el .env rotado" make -s up ENV_FILE="$rotated"
 check "servicio: la contraseña nueva funciona" ldap_bind "$SVC_DN" "${LDAP_SERVICE_PASSWORD}-rotada"
 check_fails "servicio: la vieja ya no" ldap_bind "$SVC_DN" "$LDAP_SERVICE_PASSWORD"
 check "alice: la contraseña nueva funciona" ldap_bind "$ALICE" "${LDAP_SEED_USER_PASSWORD}-rotada"
+auth_status() { curl -s -o /dev/null -w '%{http_code}' -X POST "http://127.0.0.1:${AUTH_SVC_HOST_PORT}/token" \
+  -H 'Content-Type: application/json' -d "{\"username\":\"alice\",\"password\":\"$1\"}"; }
+check_output "auth-svc: alice obtiene token con la contraseña rotada" '^200$' \
+  auth_status "${LDAP_SEED_USER_PASSWORD}-rotada"
 check_output "postgres: la contraseña nueva funciona" '^1$' pg_tcp "${POSTGRES_PASSWORD}-rotada"
 check_fails "postgres: la vieja ya no" pg_tcp "$POSTGRES_PASSWORD"
 
