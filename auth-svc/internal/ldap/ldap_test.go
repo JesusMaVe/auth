@@ -114,6 +114,25 @@ func TestAuthenticate(t *testing.T) {
 		})
 	}
 
+	// El tiempo de respuesta no debe revelar si el usuario existe: un usuario inexistente
+	// paga el mismo bind (verificación del hash ARGON2) que una contraseña errónea.
+	t.Run("usuario inexistente tarda lo mismo que una contraseña errónea", func(t *testing.T) {
+		median := func(user string) time.Duration {
+			var d []time.Duration
+			for range 9 {
+				start := time.Now()
+				_, _ = c.Authenticate(ctx, user, "incorrecta")
+				d = append(d, time.Since(start))
+			}
+			slices.Sort(d)
+			return d[len(d)/2]
+		}
+		unknown, wrong := median("nadie"), median("alice")
+		if unknown < wrong*6/10 {
+			t.Fatalf("usuario inexistente %v vs contraseña errónea %v: la diferencia revela si el usuario existe", unknown, wrong)
+		}
+	})
+
 	t.Run("cuenta de servicio mal configurada no es un 401", func(t *testing.T) {
 		bad := cfg
 		bad.BindPassword = "incorrecta"

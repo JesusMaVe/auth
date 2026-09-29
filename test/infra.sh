@@ -67,4 +67,28 @@ check "hay un entryUUID de referencia" test -n "$before"
 check "no se vuelve a inicializar al reiniciar" test -n "$before" -a "$(alice_uuid)" = "$before"
 check_output "alice sigue autenticándose tras el reinicio" "dn:${ALICE}" alice_whoami
 
+echo "infra: auth-svc"
+AUTH="http://127.0.0.1:${AUTH_SVC_HOST_PORT}"
+token_req() { curl -s -X POST "$AUTH/token" -H 'Content-Type: application/json' \
+  -d "{\"username\":\"$1\",\"password\":\"$2\"}"; }
+token_status() { curl -s -o /dev/null -w '%{http_code}' -X POST "$AUTH/token" \
+  -H 'Content-Type: application/json' -d "{\"username\":\"$1\",\"password\":\"$2\"}"; }
+# jwt_payload <json>: decodifica (sin verificar) el payload del token de la respuesta.
+jwt_payload() {
+  local p
+  p=$(sed -E 's/.*"token":"[^.]+\.([^.]+)\..*/\1/' <<< "$1" | tr '_-' '/+')
+  while (( ${#p} % 4 )); do p+='='; done
+  base64 -d <<< "$p" 2>/dev/null
+}
+
+check_output "healthz responde" '"status":"ok"' curl -s "$AUTH/healthz"
+resp=$(token_req alice "$LDAP_SEED_USER_PASSWORD")
+check_output "alice obtiene un JWT" '"token":"[^".]+\.[^".]+\.[^".]+"' echo "$resp"
+check_output "el JWT es de alice" '"sub":"alice"' jwt_payload "$resp"
+check_output "el JWT trae el emisor configurado" "\"iss\":\"${JWT_ISSUER}\"" jwt_payload "$resp"
+check_output "contraseña errónea → 401" '^401$' token_status alice contraseña-incorrecta
+check_output "usuario inexistente → 401" '^401$' token_status nadie "$LDAP_SEED_USER_PASSWORD"
+check_no_output "los logs no contienen la contraseña" "$LDAP_SEED_USER_PASSWORD" "${DC[@]}" logs auth-svc
+check_output "sin puerto publicado fuera de 127.0.0.1" '127\.0\.0\.1' "${DC[@]}" port auth-svc "$AUTH_SVC_PORT"
+
 summary

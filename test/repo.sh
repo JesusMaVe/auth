@@ -77,4 +77,18 @@ for bad in 'X_PASSWORD = valorsecreto' 'X_PASSWORD="valorsecreto"' $'X_PASSWORD=
     scripts/sync-secrets.sh "$tmp/bad.env" "$tmp/secrets"
 done
 
+echo "repo: claves del JWT"
+keys="$tmp/keys"
+check_output "genera la privada e informa el cambio" '^jwt_private_key$' scripts/gen-jwt-keys.sh "$keys"
+check "la privada es Ed25519" sh -c "openssl pkey -in '$keys/jwt_private_key' -noout -text | grep -q ED25519"
+check "la pública corresponde a la privada" \
+  test -s "$keys/jwt_public_key" -a "$(openssl pkey -in "$keys/jwt_private_key" -pubout)" = "$(cat "$keys/jwt_public_key")"
+priv_before=$(cat "$keys/jwt_private_key")
+check_no_output "si ya existen no informa nada" '.' scripts/gen-jwt-keys.sh "$keys"
+# -n evita el pase en falso: si no hubiera privada, ambos valores serían vacíos e iguales.
+check "no sobrescribe la privada" test -n "$priv_before" -a "$(cat "$keys/jwt_private_key")" = "$priv_before"
+rm "$keys/jwt_public_key"
+scripts/gen-jwt-keys.sh "$keys" >/dev/null 2>&1
+check "regenera la pública si falta" test -s "$keys/jwt_public_key"
+
 summary

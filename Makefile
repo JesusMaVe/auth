@@ -15,11 +15,12 @@ GOVULNCHECK_VERSION := v1.8.0
 
 LDAP_TEST_IMAGE     := auth-ldap:test
 POSTGRES_TEST_IMAGE := auth-postgres:test
+AUTH_SVC_TEST_IMAGE := auth-svc:test
 
 SHELL_SCRIPTS := $(shell find . -name '*.sh' -not -path './.git/*' -not -path '*/node_modules/*')
 DOCKERFILES   := $(shell find . -name 'Dockerfile*' -not -path './.git/*' -not -path '*/node_modules/*')
 
-.PHONY: help env secrets up down clean logs test test-repo test-ldap-image test-postgres-image test-auth-svc test-infra test-rotation lint secrets-scan
+.PHONY: help env secrets up down clean logs test test-repo test-ldap-image test-postgres-image test-auth-svc test-auth-svc-image test-infra test-rotation lint secrets-scan jwt-public-key
 
 help: ## Muestra esta ayuda
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -27,13 +28,17 @@ help: ## Muestra esta ayuda
 env: ## Crea .env desde .env.example con secretos aleatorios (no sobrescribe)
 	@scripts/gen-env.sh "$(ENV_EXAMPLE)" "$(ENV_FILE)"
 
-secrets: ## Escribe los *_PASSWORD de .env como archivos en secrets/ (Docker secrets)
+secrets: ## Escribe los *_PASSWORD de .env en secrets/ y genera las claves del JWT si faltan
 	@scripts/sync-secrets.sh "$(ENV_FILE)" secrets
+	@scripts/gen-jwt-keys.sh secrets
 
 up: ## Levanta los servicios (espera a healthy); si cambió algún secreto, recrea los contenedores
-	@changed=$$(scripts/sync-secrets.sh "$(ENV_FILE)" secrets) || exit 1; \
+	@changed=$$(scripts/sync-secrets.sh "$(ENV_FILE)" secrets && scripts/gen-jwt-keys.sh secrets) || exit 1; \
 	if [ -n "$$changed" ]; then echo "secretos nuevos o cambiados: $$(echo $$changed) → se recrean los contenedores"; fi; \
 	$(COMPOSE) up -d --build --wait $${changed:+--force-recreate}
+
+jwt-public-key: ## Imprime la clave pública del JWT (para JWT_PUBLIC_KEY_FILE del repo api)
+	@cat secrets/jwt_public_key
 
 down: ## Detiene los servicios
 	$(COMPOSE) down
@@ -44,7 +49,7 @@ clean: ## Detiene los servicios y BORRA los volúmenes (datos de postgres y ldap
 logs: ## Muestra los logs de los servicios
 	$(COMPOSE) logs --no-color
 
-test: test-repo test-ldap-image test-postgres-image test-auth-svc test-infra test-rotation ## Corre todos los tests
+test: test-repo test-ldap-image test-postgres-image test-auth-svc test-auth-svc-image test-infra test-rotation ## Corre todos los tests
 
 test-repo: ## Tests del esqueleto del repo
 	@test/repo.sh
@@ -60,6 +65,10 @@ test-postgres-image: ## Tests de la imagen postgres en aislamiento
 test-auth-svc: ## Tests de Go de auth-svc (unitarios + integración con la imagen ldap vía testcontainers)
 	docker build -q -t $(LDAP_TEST_IMAGE) ldap >/dev/null
 	cd auth-svc && LDAP_TEST_IMAGE=$(LDAP_TEST_IMAGE) go test -race -count=1 ./...
+
+test-auth-svc-image: ## Tests de la imagen auth-svc en aislamiento
+	docker build -q -t $(AUTH_SVC_TEST_IMAGE) auth-svc >/dev/null
+	@AUTH_SVC_TEST_IMAGE=$(AUTH_SVC_TEST_IMAGE) test/auth-svc-image.sh
 
 test-infra: up ## Tests de integración del compose
 	@test/infra.sh

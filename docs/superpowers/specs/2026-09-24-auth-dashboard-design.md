@@ -38,7 +38,7 @@ Browser ─▶ frontend│                               │ firma JWT (EdDSA, p
 El navegador habla con un **solo origen** (el del frontend): el proxy de Vite (dev) o nginx (prod) reenvía `/auth/*` a auth-svc y `/api/*` a la API. Los destinos salen de env (`AUTH_SVC_URL`, `API_URL`). Así no hace falta CORS. Cada repo levanta su compose y publica su puerto solo en `127.0.0.1`.
 
 - **ldap** (repo `auth`, imagen propia en `/ldap`): Alpine + OpenLDAP 2.6 (`slapd`, `mdb`). El `entrypoint.sh` genera `cn=config` desde env en el primer arranque, hashea contraseñas (ARGON2) y carga `ou=users`, `ou=groups`, `ou=services` + cuenta de servicio de auth-svc. Contraseñas por `*_FILE`; se aplican en cada arranque (rotación). Seed de desarrollo (alice, bob) solo en `docker-compose.dev.yml`. Non-root, solo lectura, healthcheck.
-- **auth-svc** (repo `auth`): `POST /token {username,password}` → search-then-bind LDAP (`go-ldap/ldap/v3`, filtros escapados) → `{token}` firmado con **EdDSA**. `make env` genera el par de claves. Puerto publicado en `127.0.0.1`.
+- **auth-svc** (repo `auth`): `POST /token {username,password}` → search-then-bind LDAP (`go-ldap/ldap/v3`, filtros escapados) → `{token}` firmado con **EdDSA**. `make up`/`make secrets` generan el par de claves en `secrets/` si falta (`make jwt-public-key` imprime la pública para `api`). Puerto publicado en `127.0.0.1`.
 - **api** (repo `api`, `net/http` estándar):
   - `GET /api/items`, `POST /api/items`, `/healthz`.
   - Middleware **`RequireBearer`**: lee `Authorization: Bearer <jwt>`, lo verifica (firma, `alg` fijo, `exp`, `iss`, `aud`) y pone el usuario en el `context`. Sin token o inválido → 401.
@@ -52,7 +52,8 @@ El navegador habla con un **solo origen** (el del frontend): el proxy de Vite (d
 ### Seguridad (checklist transversal; cada issue indica cuáles le tocan)
 - JWT: algoritmo fijo en el parser (evitar `alg` confusion), `exp`/`iat`/`iss`/`aud` obligatorios, TTL corto por env. La API solo tiene la clave pública.
 - Token en el navegador: `sessionStorage` (no `localStorage`), CSP estricta para limitar XSS, se borra en logout y ante un 401. El `console.log` del JWT es solo para la demo y se apaga con `VITE_LOG_JWT=false`.
-- Rate limit en `/token` (por IP y usuario); errores genéricos ("credenciales inválidas") para no revelar si el usuario existe.
+- Rate limit en `/token` (por IP y usuario); errores genéricos ("credenciales inválidas") y **mismo costo de respuesta** (un usuario inexistente paga un bind ARGON2 equivalente) para no revelar si el usuario existe.
+- La IP del rate limit es la de la conexión (`RemoteAddr`); `X-Forwarded-For` se ignora. Detrás de un proxy (Vite en dev, nginx en prod) el límite por IP es **global**. Decisión diferida a la imagen nginx (JesusMaVe/frontend#7): confiar en `X-Forwarded-For` solo desde proxies listados en una variable `TRUSTED_PROXIES`.
 - Escape de filtros LDAP; contraseña vacía rechazada; LDAPS/StartTLS configurable.
 - Imagen LDAP: ACLs de mínimo privilegio (anónimo solo autentica y lee el Root DSE; la cuenta de servicio solo lee `ou=users`/`ou=groups`; cada usuario solo se ve a sí mismo; `userPassword` nunca es legible), `cn=config` inaccesible en runtime, non-root, `read_only`, `cap_drop: ALL`.
 - Consultas parametrizadas con pgx; validación de entrada (longitudes) y `http.MaxBytesReader`.
