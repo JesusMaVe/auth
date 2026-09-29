@@ -50,7 +50,7 @@ make up               # detecta el cambio, recrea y aplica
 
 ## auth-svc (API de LDAP que emite el JWT)
 
-`POST /token {"username","password"}` → `{"token":"<JWT EdDSA>"}`. Errores: 400 cuerpo inválido, 401 credenciales inválidas (genérico), 413 cuerpo demasiado grande, 429 rate limit (por IP y por usuario; detrás del proxy de Vite todas las peticiones comparten IP), 502 LDAP no disponible.
+`POST /token {"username","password"}` → `{"token":"<JWT EdDSA>"}`. Errores: 400 cuerpo inválido, 401 credenciales inválidas (genérico), 413 cuerpo demasiado grande, 429 rate limit (por IP y por usuario; detrás de cualquier proxy —Vite o nginx— todas las peticiones comparten IP, así que el límite por IP es global), 502 LDAP no disponible.
 
 ```bash
 make up

@@ -53,11 +53,12 @@ func (c *Client) Authenticate(ctx context.Context, username, password string) (I
 		return Identity{}, fmt.Errorf("ldap: bind de la cuenta de servicio: %w", err)
 	}
 	entry, err := c.findUser(conn, username)
-	if err != nil {
-		return Identity{}, err
+	if errors.Is(err, ErrInvalidCredentials) {
+		// Mismo costo que un usuario real (un bind que verifica un hash ARGON2) para que el
+		// tiempo de respuesta no revele si el usuario existe. El resultado se descarta.
+		_ = conn.Bind(c.cfg.BindDN, password)
+		return Identity{}, ErrInvalidCredentials
 	}
-	// Los grupos se leen como cuenta de servicio (el usuario no tiene acceso a ou=groups).
-	groups, err := c.groupsOf(conn, entry.DN)
 	if err != nil {
 		return Identity{}, err
 	}
@@ -66,6 +67,14 @@ func (c *Client) Authenticate(ctx context.Context, username, password string) (I
 			return Identity{}, ErrInvalidCredentials
 		}
 		return Identity{}, fmt.Errorf("ldap: bind del usuario: %w", err)
+	}
+	// Los grupos se leen como cuenta de servicio (el usuario no tiene acceso a ou=groups).
+	if err := conn.Bind(c.cfg.BindDN, c.cfg.BindPassword); err != nil {
+		return Identity{}, fmt.Errorf("ldap: re-bind de la cuenta de servicio: %w", err)
+	}
+	groups, err := c.groupsOf(conn, entry.DN)
+	if err != nil {
+		return Identity{}, err
 	}
 	return Identity{
 		Username: entry.GetAttributeValue("uid"),
