@@ -36,6 +36,7 @@ git clone https://github.com/JesusMaVe/frontend.git
 - Usuario de prueba: **`alice`** (o `bob`). Contraseña: `sed -n 's/^LDAP_SEED_USER_PASSWORD=//p' auth/.env`.
 - El primer `make up` crea la red Docker compartida `practica` (172.30.0.0/24), por la que la imagen nginx del frontend llega a auth-svc y a la api.
 - El orden importa: `api` necesita la clave pública que genera `auth`. Si `auth` rota su clave, basta con volver a correr `make up` en `api`.
+- También se puede usar la imagen de producción del frontend (nginx) en lugar de Vite: `(cd frontend && make up)` → http://127.0.0.1:8088. Para que se vea el `console.log` del JWT, pon antes `WEB_LOG_JWT=true` en `frontend/.env`.
 - Para comprobar sin navegador:
 
 ```bash
@@ -113,11 +114,11 @@ make up               # detecta el cambio, recrea y aplica
 
 ```bash
 make up
-curl -s -X POST 127.0.0.1:${AUTH_SVC_HOST_PORT}/token -H 'Content-Type: application/json' \
+curl -s -X POST 127.0.0.1:8081/token -H 'Content-Type: application/json' \
   -d '{"username":"alice","password":"<LDAP_SEED_USER_PASSWORD de tu .env>"}'
 ```
 
-`make up` genera el par Ed25519 en `secrets/` si no existe. La **clave pública** (`make jwt-public-key`) se copia al repo `api` como `JWT_PUBLIC_KEY_FILE`; `JWT_ISSUER` y `JWT_AUDIENCE` deben coincidir en ambos repos.
+`make up` genera el par Ed25519 en `secrets/` si no existe. El repo `api` importa la **clave pública** sola en su `make up` (desde `../auth/secrets/jwt_public_key`); `make jwt-public-key` la imprime. `JWT_ISSUER` y `JWT_AUDIENCE` deben coincidir en ambos repos.
 
 Postgres vive en el repo [`api`](https://github.com/JesusMaVe/api).
 
@@ -128,5 +129,5 @@ Postgres vive en el repo [`api`](https://github.com/JesusMaVe/api).
 | `ldap/` | Imagen OpenLDAP propia |
 | `auth-svc/` | Servicio Go: `POST /token` (search-then-bind + JWT EdDSA) |
 | `test/` | Smoke tests de infraestructura |
-| `scripts/` | Utilidades del repo (`gen-env.sh`, `sync-secrets.sh`, `gen-jwt-keys.sh`) |
-| `docs/` | Spec y planes por etapa |
+| `scripts/` | Utilidades del repo (`gen-env.sh`, `sync-secrets.sh`, `gen-jwt-keys.sh`, `ensure-network.sh`) |
+| `docs/` | Spec, planes por etapa y [revisión de seguridad](docs/superpowers/security-review-2026-09-30.md) |
