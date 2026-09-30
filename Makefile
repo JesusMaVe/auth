@@ -14,13 +14,12 @@ GOSEC_VERSION       := v2.29.0
 GOVULNCHECK_VERSION := v1.8.0
 
 LDAP_TEST_IMAGE     := auth-ldap:test
-POSTGRES_TEST_IMAGE := auth-postgres:test
 AUTH_SVC_TEST_IMAGE := auth-svc:test
 
 SHELL_SCRIPTS := $(shell find . -name '*.sh' -not -path './.git/*' -not -path '*/node_modules/*')
 DOCKERFILES   := $(shell find . -name 'Dockerfile*' -not -path './.git/*' -not -path '*/node_modules/*')
 
-.PHONY: help env secrets up down clean logs test test-repo test-ldap-image test-postgres-image test-auth-svc test-auth-svc-image test-infra test-rotation lint secrets-scan jwt-public-key
+.PHONY: help env secrets up down clean logs test test-repo test-ldap-image test-auth-svc test-auth-svc-image test-infra test-rotation lint secrets-scan jwt-public-key
 
 help: ## Muestra esta ayuda
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -43,13 +42,13 @@ jwt-public-key: ## Imprime la clave pública del JWT (para JWT_PUBLIC_KEY_FILE d
 down: ## Detiene los servicios
 	$(COMPOSE) down
 
-clean: ## Detiene los servicios y BORRA los volúmenes (datos de postgres y ldap)
+clean: ## Detiene los servicios y BORRA los volúmenes (datos de ldap)
 	$(COMPOSE) down -v
 
 logs: ## Muestra los logs de los servicios
 	$(COMPOSE) logs --no-color
 
-test: test-repo test-ldap-image test-postgres-image test-auth-svc test-auth-svc-image test-infra test-rotation ## Corre todos los tests
+test: test-repo test-ldap-image test-auth-svc test-auth-svc-image test-infra test-rotation ## Corre todos los tests
 
 test-repo: ## Tests del esqueleto del repo
 	@test/repo.sh
@@ -57,10 +56,6 @@ test-repo: ## Tests del esqueleto del repo
 test-ldap-image: ## Tests de la imagen ldap en aislamiento
 	docker build -q -t $(LDAP_TEST_IMAGE) ldap >/dev/null
 	@LDAP_TEST_IMAGE=$(LDAP_TEST_IMAGE) test/ldap-image.sh
-
-test-postgres-image: ## Tests de la imagen postgres en aislamiento
-	docker build -q -t $(POSTGRES_TEST_IMAGE) postgres >/dev/null
-	@POSTGRES_TEST_IMAGE=$(POSTGRES_TEST_IMAGE) test/postgres-image.sh
 
 test-auth-svc: ## Tests de Go de auth-svc (unitarios + integración con la imagen ldap vía testcontainers)
 	docker build -q -t $(LDAP_TEST_IMAGE) ldap >/dev/null

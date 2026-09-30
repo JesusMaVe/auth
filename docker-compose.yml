@@ -1,20 +1,6 @@
 # Servicios base. Toda la configuración sale de .env (ver .env.example);
 # ${VAR:?} hace fallar a compose si falta una variable.
 services:
-  postgres:
-    build: ./postgres
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB no definida}
-      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER no definida}
-      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
-    secrets:
-      - postgres_password
-    volumes:
-      - pgdata:/var/lib/postgresql
-    security_opt:
-      - no-new-privileges:true
-    restart: unless-stopped
-
   ldap:
     build: ./ldap
     environment:
@@ -73,8 +59,6 @@ services:
 
 # Archivos generados desde .env por `make secrets` (secrets/ está en .gitignore).
 secrets:
-  postgres_password:
-    file: ./secrets/postgres_password
   ldap_admin_password:
     file: ./secrets/ldap_admin_password
   ldap_service_password:
@@ -83,5 +67,4 @@ secrets:
     file: ./secrets/jwt_private_key
 
 volumes:
-  pgdata:
   ldapdata:
