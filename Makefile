@@ -19,7 +19,7 @@ AUTH_SVC_TEST_IMAGE := auth-svc:test
 SHELL_SCRIPTS := $(shell find . -name '*.sh' -not -path './.git/*' -not -path '*/node_modules/*')
 DOCKERFILES   := $(shell find . -name 'Dockerfile*' -not -path './.git/*' -not -path '*/node_modules/*')
 
-.PHONY: help env secrets up down clean logs test test-repo test-ldap-image test-auth-svc test-auth-svc-image test-infra test-rotation lint secrets-scan jwt-public-key
+.PHONY: help env secrets network up down clean logs test test-repo test-ldap-image test-auth-svc test-auth-svc-image test-infra test-rotation lint secrets-scan jwt-public-key
 
 help: ## Muestra esta ayuda
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -31,7 +31,10 @@ secrets: ## Escribe los *_PASSWORD de .env en secrets/ y genera las claves del J
 	@scripts/sync-secrets.sh "$(ENV_FILE)" secrets
 	@scripts/gen-jwt-keys.sh secrets
 
-up: ## Levanta los servicios (espera a healthy); si cambió algún secreto, recrea los contenedores
+network: ## Crea la red Docker compartida con api y frontend (si no existe)
+	@set -a && . "$(abspath $(ENV_FILE))" && set +a && scripts/ensure-network.sh "$$SHARED_NETWORK" "$$SHARED_NETWORK_SUBNET"
+
+up: network ## Levanta los servicios (espera a healthy); si cambió algún secreto, recrea los contenedores
 	@changed=$$(scripts/sync-secrets.sh "$(ENV_FILE)" secrets && scripts/gen-jwt-keys.sh secrets) || exit 1; \
 	if [ -n "$$changed" ]; then echo "secretos nuevos o cambiados: $$(echo $$changed) → se recrean los contenedores"; fi; \
 	$(COMPOSE) up -d --build --wait $${changed:+--force-recreate}

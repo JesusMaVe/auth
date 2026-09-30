@@ -72,6 +72,7 @@ func run() error {
 	handler := httpapi.New(auth, issuer,
 		ratelimit.New(cfg.RateLimitPerMinute, cfg.RateLimitBurst, time.Now),
 		ratelimit.New(cfg.RateLimitPerMinute, cfg.RateLimitBurst, time.Now),
+		cfg.TrustedProxies,
 		log)
 
 	srv := &http.Server{

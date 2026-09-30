@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 
 	"github.com/JesusMaVe/auth/auth-svc/internal/ldap"
@@ -36,15 +37,16 @@ type tokenHandler struct {
 	auth         Authenticator
 	issuer       TokenIssuer
 	byIP, byUser Limiter
+	trusted      []netip.Prefix
 	log          *slog.Logger
 }
 
-func New(auth Authenticator, issuer TokenIssuer, byIP, byUser Limiter, log *slog.Logger) http.Handler {
+func New(auth Authenticator, issuer TokenIssuer, byIP, byUser Limiter, trusted []netip.Prefix, log *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
-	mux.Handle("POST /token", &tokenHandler{auth: auth, issuer: issuer, byIP: byIP, byUser: byUser, log: log})
+	mux.Handle("POST /token", &tokenHandler{auth: auth, issuer: issuer, byIP: byIP, byUser: byUser, trusted: trusted, log: log})
 	return mux
 }
 
@@ -54,7 +56,7 @@ type tokenRequest struct {
 }
 
 func (h *tokenHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ip := clientIP(r)
+	ip := clientIP(r, h.trusted)
 	if !h.byIP.Allow(ip) {
 		h.log.Warn("rate limit", "por", "ip", "ip", ip)
 		tooManyRequests(w)
@@ -78,7 +80,8 @@ func (h *tokenHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user := strings.ToLower(req.Username)
+	// Como compara LDAP (caseIgnoreMatch): sin mayúsculas ni espacios de más.
+	user := strings.Join(strings.Fields(strings.ToLower(req.Username)), " ")
 	if !h.byUser.Allow(user) {
 		h.log.Warn("rate limit", "por", "usuario", "user", user, "ip", ip)
 		tooManyRequests(w)
@@ -108,13 +111,42 @@ func (h *tokenHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"token": tok})
 }
 
-// clientIP usa la IP de la conexión; X-Forwarded-For no se usa porque el cliente lo controla.
-func clientIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
+// clientIP es la IP de la conexión, salvo que venga de un proxy de confianza (nginx en la red
+// compartida): entonces es la dirección de más a la derecha de X-Forwarded-For que no sea un
+// proxy. Las de la izquierda las pudo escribir el cliente; la de la derecha la agregó el proxy.
+func clientIP(r *http.Request, trusted []netip.Prefix) string {
+	peer, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		return r.RemoteAddr
+		peer = r.RemoteAddr
 	}
-	return host
+	if !isTrusted(peer, trusted) {
+		return peer
+	}
+	hops := strings.Split(r.Header.Get("X-Forwarded-For"), ",")
+	for i := len(hops) - 1; i >= 0; i-- {
+		hop := strings.TrimSpace(hops[i])
+		if hop == "" || isTrusted(hop, trusted) {
+			continue
+		}
+		if _, err := netip.ParseAddr(hop); err != nil {
+			return peer
+		}
+		return hop
+	}
+	return peer
+}
+
+func isTrusted(ip string, trusted []netip.Prefix) bool {
+	addr, err := netip.ParseAddr(ip)
+	if err != nil {
+		return false
+	}
+	for _, p := range trusted {
+		if p.Contains(addr.Unmap()) {
+			return true
+		}
+	}
+	return false
 }
 
 func tooManyRequests(w http.ResponseWriter) {

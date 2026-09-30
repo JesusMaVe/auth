@@ -53,7 +53,9 @@ El navegador habla con un **solo origen** (el del frontend): el proxy de Vite (d
 - JWT: algoritmo fijo en el parser (evitar `alg` confusion), `exp`/`iat`/`iss`/`aud` obligatorios, TTL corto por env. La API solo tiene la clave pública.
 - Token en el navegador: `sessionStorage` (no `localStorage`), CSP estricta para limitar XSS, se borra en logout y ante un 401. El `console.log` del JWT es solo para la demo y se apaga con `VITE_LOG_JWT=false`.
 - Rate limit en `/token` (por IP y usuario); errores genéricos ("credenciales inválidas") y **mismo costo de respuesta** (un usuario inexistente paga un bind ARGON2 equivalente) para no revelar si el usuario existe.
-- La IP del rate limit es la de la conexión (`RemoteAddr`); `X-Forwarded-For` se ignora. Detrás de un proxy (Vite en dev, nginx en prod) el límite por IP es **global**. Decisión diferida a la imagen nginx (JesusMaVe/frontend#7): confiar en `X-Forwarded-For` solo desde proxies listados en una variable `TRUSTED_PROXIES`.
+- La IP del rate limit es la de la conexión, salvo que venga de un proxy de confianza (`TRUSTED_PROXIES`, en compose = la subnet de la red compartida): entonces se usa la dirección de más a la derecha de `X-Forwarded-For` que no sea un proxy. La clave por usuario se normaliza como lo compara LDAP (minúsculas, espacios colapsados).
+- Red Docker compartida (`SHARED_NETWORK`, subnet `SHARED_NETWORK_SUBNET`): auth-svc, api y la imagen `web` (nginx) se unen a ella; nginx llega a los servicios por nombre. La crea el primer `make up` de cualquier repo.
+- TLS fuera de alcance: todo corre en localhost.
 - Escape de filtros LDAP; contraseña vacía rechazada; LDAPS/StartTLS configurable.
 - Imagen LDAP: ACLs de mínimo privilegio (anónimo solo autentica y lee el Root DSE; la cuenta de servicio solo lee `ou=users`/`ou=groups`; cada usuario solo se ve a sí mismo; `userPassword` nunca es legible), `cn=config` inaccesible en runtime, non-root, `read_only`, `cap_drop: ALL`.
 - Consultas parametrizadas con pgx; validación de entrada (longitudes) y `http.MaxBytesReader`.

@@ -44,12 +44,16 @@ services:
       JWT_TTL: ${JWT_TTL:?JWT_TTL no definida}
       RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:?RATE_LIMIT_PER_MINUTE no definida}
       RATE_LIMIT_BURST: ${RATE_LIMIT_BURST:?RATE_LIMIT_BURST no definida}
+      TRUSTED_PROXIES: ${SHARED_NETWORK_SUBNET:?SHARED_NETWORK_SUBNET no definida}
     secrets:
       - ldap_service_password
       - jwt_private_key
     depends_on:
       ldap:
         condition: service_healthy
+    networks:
+      - default
+      - shared
     read_only: true
     cap_drop:
       - ALL
@@ -68,3 +72,8 @@ secrets:
 
 volumes:
   ldapdata:
+
+networks:
+  shared:
+    name: ${SHARED_NETWORK:?SHARED_NETWORK no definida}
+    external: true
