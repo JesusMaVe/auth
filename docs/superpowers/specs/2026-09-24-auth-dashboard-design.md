@@ -59,6 +59,7 @@ El navegador habla con un **solo origen** (el del frontend): el proxy de Vite (d
 - Escape de filtros LDAP; contraseña vacía rechazada; LDAPS/StartTLS configurable.
 - Imagen LDAP: ACLs de mínimo privilegio (anónimo solo autentica y lee el Root DSE; la cuenta de servicio solo lee `ou=users`/`ou=groups`; cada usuario solo se ve a sí mismo; `userPassword` nunca es legible), `cn=config` inaccesible en runtime, non-root, `read_only`, `cap_drop: ALL`.
 - Consultas parametrizadas con pgx; validación de entrada (longitudes) y `http.MaxBytesReader`.
+- La API se conecta a Postgres con un rol sin superusuario (`POSTGRES_APP_USER`, creado y rotado por el entrypoint); el superusuario solo administra.
 - Headers: CSP, `X-Content-Type-Options`, `Referrer-Policy`, `frame-ancestors 'none'`.
 - Contenedores distroless/non-root, secretos por Docker secrets/`.env` (en `.gitignore`), `.env.example` documentado.
 - **Rotación de contraseñas:** ldap y postgres aplican las contraseñas de los secretos **en cada arranque**. Rotar = cambiar `.env` + `make up`, sin borrar datos.
