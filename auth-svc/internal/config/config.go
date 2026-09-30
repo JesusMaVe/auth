@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"net/url"
 	"os"
 	"slices"
@@ -31,6 +32,7 @@ type Config struct {
 	JWTTTL             time.Duration
 	RateLimitPerMinute int
 	RateLimitBurst     int
+	TrustedProxies     []netip.Prefix
 }
 
 // Load construye la Config con getenv (os.Getenv en producción) y devuelve todos los errores juntos.
@@ -52,6 +54,7 @@ func Load(getenv func(string) string) (Config, error) {
 		JWTTTL:             r.duration("JWT_TTL"),
 		RateLimitPerMinute: r.positiveInt("RATE_LIMIT_PER_MINUTE"),
 		RateLimitBurst:     r.positiveInt("RATE_LIMIT_BURST"),
+		TrustedProxies:     r.prefixes("TRUSTED_PROXIES"),
 	}
 	if err := errors.Join(r.errs...); err != nil {
 		return Config{}, fmt.Errorf("config:\n%w", err)
@@ -144,6 +147,24 @@ func (r *reader) logLevel(key string) slog.Level {
 		r.invalid(key, "debe ser debug, info, warn o error")
 	}
 	return l
+}
+
+// prefixes lee una lista de CIDR separada por comas (p. ej. "172.30.0.0/24, 10.0.0.0/8").
+func (r *reader) prefixes(key string) []netip.Prefix {
+	v := r.str(key)
+	if v == "" {
+		return nil
+	}
+	var out []netip.Prefix
+	for _, part := range strings.Split(v, ",") {
+		p, err := netip.ParsePrefix(strings.TrimSpace(part))
+		if err != nil {
+			r.invalid(key, "debe ser una lista de CIDR separada por comas, p. ej. 172.30.0.0/24")
+			return nil
+		}
+		out = append(out, p.Masked())
+	}
+	return out
 }
 
 // file lee un secreto montado como archivo (Docker secret) y quita el salto de línea final.

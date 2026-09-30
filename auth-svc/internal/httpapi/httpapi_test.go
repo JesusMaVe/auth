@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strings"
 	"testing"
 
@@ -52,12 +53,21 @@ type env struct {
 
 func newEnv() *env { return &env{auth: &fakeAuth{}, byIP: &fakeLimiter{}, byUser: &fakeLimiter{}} }
 
+var trusted = []netip.Prefix{netip.MustParsePrefix("172.30.0.0/24")}
+
+func (e *env) handler() http.Handler {
+	return New(e.auth, e.issuer, e.byIP, e.byUser, trusted, slog.New(slog.NewJSONHandler(&e.logs, nil)))
+}
+
 func (e *env) do(method, path, body string) *httptest.ResponseRecorder {
-	h := New(e.auth, e.issuer, e.byIP, e.byUser, slog.New(slog.NewJSONHandler(&e.logs, nil)))
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
 	req.RemoteAddr = "192.0.2.10:5555"
+	return e.serve(req)
+}
+
+func (e *env) serve(req *http.Request) *httptest.ResponseRecorder {
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	e.handler().ServeHTTP(rec, req)
 	return rec
 }
 
@@ -186,4 +196,39 @@ func TestMethodNotAllowed(t *testing.T) {
 
 func TestHealthz(t *testing.T) {
 	expect(t, newEnv().do("GET", "/healthz", ""), 200, `{"status":"ok"}`)
+}
+
+func TestClientIPBehindTrustedProxy(t *testing.T) {
+	cases := []struct {
+		name, remote, xff, want string
+	}{
+		{"conexión directa: se ignora X-Forwarded-For", "192.0.2.10:1", "203.0.113.7", "192.0.2.10"},
+		{"desde el proxy: la IP del cliente", "172.30.0.5:1", "203.0.113.7", "203.0.113.7"},
+		{"cadena falsificada: la de más a la derecha no confiable", "172.30.0.5:1", "1.2.3.4, 203.0.113.7", "203.0.113.7"},
+		{"se saltan los proxies de confianza", "172.30.0.5:1", "203.0.113.7, 172.30.0.9", "203.0.113.7"},
+		{"desde el proxy sin cabecera: la del proxy", "172.30.0.5:1", "", "172.30.0.5"},
+		{"cabecera basura: la del proxy", "172.30.0.5:1", "nope", "172.30.0.5"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newEnv()
+			req := httptest.NewRequest("POST", "/token", strings.NewReader(aliceBody))
+			req.RemoteAddr = tc.remote
+			if tc.xff != "" {
+				req.Header.Set("X-Forwarded-For", tc.xff)
+			}
+			e.serve(req)
+			if len(e.byIP.keys) != 1 || e.byIP.keys[0] != tc.want {
+				t.Fatalf("clave por IP = %v, se esperaba %s", e.byIP.keys, tc.want)
+			}
+		})
+	}
+}
+
+func TestUserKeyNormalized(t *testing.T) {
+	e := newEnv()
+	e.do("POST", "/token", `{"username":"  ALICE  ","password":"x"}`)
+	if len(e.byUser.keys) != 1 || e.byUser.keys[0] != "alice" {
+		t.Fatalf("clave por usuario = %v (LDAP ignora mayúsculas y espacios alrededor)", e.byUser.keys)
+	}
 }

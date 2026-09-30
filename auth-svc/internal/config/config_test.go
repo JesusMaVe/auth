@@ -39,6 +39,7 @@ func validEnv(t *testing.T) map[string]string {
 		"JWT_TTL":                 "30m",
 		"RATE_LIMIT_PER_MINUTE":   "10",
 		"RATE_LIMIT_BURST":        "10",
+		"TRUSTED_PROXIES":         "172.30.0.0/24, 10.0.0.0/8",
 	}
 }
 
@@ -65,6 +66,9 @@ func TestLoadValid(t *testing.T) {
 	}
 	if c.LDAPStartTLS || c.LogLevel != slog.LevelInfo || c.RateLimitPerMinute != 10 || c.RateLimitBurst != 10 {
 		t.Errorf("valores inesperados: %+v", c)
+	}
+	if len(c.TrustedProxies) != 2 || c.TrustedProxies[0].String() != "172.30.0.0/24" || c.TrustedProxies[1].String() != "10.0.0.0/8" {
+		t.Errorf("TrustedProxies = %v", c.TrustedProxies)
 	}
 }
 
@@ -95,6 +99,8 @@ func TestLoadInvalid(t *testing.T) {
 		{"RATE_LIMIT_BURST", "muchos"},
 		{"LOG_LEVEL", "verbose"},
 		{"LDAP_BIND_PASSWORD_FILE", "/no/existe"},
+		{"TRUSTED_PROXIES", "no-es-cidr"},
+		{"TRUSTED_PROXIES", "10.0.0.1"},
 		{"JWT_PRIVATE_KEY_FILE", "/no/existe"},
 	}
 	for _, tc := range cases {

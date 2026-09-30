@@ -91,4 +91,14 @@ rm "$keys/jwt_public_key"
 scripts/gen-jwt-keys.sh "$keys" >/dev/null 2>&1
 check "regenera la pública si falta" test -s "$keys/jwt_public_key"
 
+echo "repo: red compartida"
+net="auth-test-net-$$"
+check "crea la red si no existe" scripts/ensure-network.sh "$net" 172.31.250.0/24
+check_output "con la subnet pedida" '172\.31\.250\.0/24' \
+  docker network inspect -f '{{range .IPAM.Config}}{{.Subnet}}{{end}}' "$net"
+check "si ya existe con la misma subnet no hace nada" scripts/ensure-network.sh "$net" 172.31.250.0/24
+check_output "si existe con otra subnet falla y lo explica" "existe con la subnet 172.31.250.0/24" \
+  scripts/ensure-network.sh "$net" 172.31.251.0/24
+docker network rm "$net" >/dev/null 2>&1
+
 summary

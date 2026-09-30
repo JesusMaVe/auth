@@ -34,6 +34,7 @@ git clone https://github.com/JesusMaVe/frontend.git
 ```
 
 - Usuario de prueba: **`alice`** (o `bob`). Contraseña: `sed -n 's/^LDAP_SEED_USER_PASSWORD=//p' auth/.env`.
+- El primer `make up` crea la red Docker compartida `practica` (172.30.0.0/24), por la que la imagen nginx del frontend llega a auth-svc y a la api.
 - El orden importa: `api` necesita la clave pública que genera `auth`. Si `auth` rota su clave, basta con volver a correr `make up` en `api`.
 - Para comprobar sin navegador:
 
@@ -108,7 +109,7 @@ make up               # detecta el cambio, recrea y aplica
 
 ## auth-svc (API de LDAP que emite el JWT)
 
-`POST /token {"username","password"}` → `{"token":"<JWT EdDSA>"}`. Errores: 400 cuerpo inválido, 401 credenciales inválidas (genérico), 413 cuerpo demasiado grande, 429 rate limit (por IP y por usuario; detrás de cualquier proxy —Vite o nginx— todas las peticiones comparten IP, así que el límite por IP es global), 502 LDAP no disponible.
+`POST /token {"username","password"}` → `{"token":"<JWT EdDSA>"}`. Errores: 400 cuerpo inválido, 401 credenciales inválidas (genérico), 413 cuerpo demasiado grande, 429 rate limit (por IP real —detrás de nginx usa `X-Forwarded-For` solo si la conexión viene de la red compartida, `TRUSTED_PROXIES`— y por usuario), 502 LDAP no disponible.
 
 ```bash
 make up

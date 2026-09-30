@@ -82,5 +82,8 @@ check_output "contraseña errónea → 401" '^401$' token_status alice contrase�
 check_output "usuario inexistente → 401" '^401$' token_status nadie "$LDAP_SEED_USER_PASSWORD"
 check_no_output "los logs no contienen la contraseña" "$LDAP_SEED_USER_PASSWORD" "${DC[@]}" logs auth-svc
 check_output "sin puerto publicado fuera de 127.0.0.1" '127\.0\.0\.1' "${DC[@]}" port auth-svc "$AUTH_SVC_PORT"
+# shellcheck disable=SC2016  # el $k es de la plantilla Go de docker inspect
+check_output "auth-svc está en la red compartida" "$SHARED_NETWORK" \
+  docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$("${DC[@]}" ps -q auth-svc)"
 
 summary
