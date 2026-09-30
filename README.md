@@ -109,7 +109,7 @@ make up               # detecta el cambio, recrea y aplica
 
 ## auth-svc (API de LDAP que emite el JWT)
 
-`POST /token {"username","password"}` → `{"token":"<JWT EdDSA>"}`. Errores: 400 cuerpo inválido, 401 credenciales inválidas (genérico), 413 cuerpo demasiado grande, 429 rate limit (por IP real —detrás de nginx usa `X-Forwarded-For` solo si la conexión viene de la red compartida, `TRUSTED_PROXIES`— y por usuario), 502 LDAP no disponible.
+`POST /token {"username","password"}` → `{"token":"<JWT EdDSA>"}`. Errores: 400 cuerpo inválido, 401 credenciales inválidas (genérico), 413 cuerpo demasiado grande, 429 rate limit (por IP real —detrás de nginx usa `X-Forwarded-For` solo si la conexión viene de nginx, `TRUSTED_PROXIES` = `WEB_PROXY_IP`— y por usuario), 502 LDAP no disponible.
 
 ```bash
 make up
