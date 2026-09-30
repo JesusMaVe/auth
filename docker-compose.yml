@@ -44,7 +44,10 @@ services:
       JWT_TTL: ${JWT_TTL:?JWT_TTL no definida}
       RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:?RATE_LIMIT_PER_MINUTE no definida}
       RATE_LIMIT_BURST: ${RATE_LIMIT_BURST:?RATE_LIMIT_BURST no definida}
-      TRUSTED_PROXIES: ${SHARED_NETWORK_SUBNET:?SHARED_NETWORK_SUBNET no definida}
+      # Solo nginx (IP fija en la red compartida): el gateway de la red también está en la subnet
+      # y es de donde llega el tráfico de los puertos publicados, así que confiar en toda la subnet
+      # haría que auth-svc registrara la IP de nginx como la del cliente.
+      TRUSTED_PROXIES: ${WEB_PROXY_IP:?WEB_PROXY_IP no definida}/32
     secrets:
       - ldap_service_password
       - jwt_private_key
