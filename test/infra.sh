@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests de integración del compose de desarrollo (postgres + ldap con seed).
+# Tests de integración del compose de desarrollo (ldap con seed + auth-svc).
 # Requiere los servicios levantados: make test-infra lo hace.
 set -u
 cd "$(dirname "$0")/.." || exit 1
@@ -28,17 +28,9 @@ svc_modify_alice() {
 # entryUUID de alice: una reinicialización lo regeneraría (no depende de los logs ni de si compose recrea el contenedor).
 alice_uuid() { as_svc -b "$ALICE" -s base entryUUID | sed -n 's/^entryUUID: //p'; }
 
-echo "infra: postgres"
-check_output "responde a select 1" '^1$' \
-  "${DC[@]}" exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc 'select 1'
-# Por TCP a la IP del contenedor (127.0.0.1 no pide contraseña en el pg_hba de la imagen oficial).
-pg_tcp() {
-  # shellcheck disable=SC2016  # se expande dentro del contenedor
-  "${DC[@]}" exec -T -e PGPASSWORD="$1" postgres \
-    sh -c 'psql -h "$(hostname -i)" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "select 1"'
-}
-check_output "autentica por TCP con la contraseña del secreto" '^1$' pg_tcp "$POSTGRES_PASSWORD"
-check_fails  "rechaza por TCP una contraseña errónea" pg_tcp contraseña-incorrecta
+echo "infra: servicios"
+check_no_output "postgres ya no vive en este repo (está en JesusMaVe/api)" '^postgres$' \
+  "${DC[@]}" config --services
 
 echo "infra: ldap"
 check_output    "el Root DSE es legible de forma anónima" "namingContexts: ${LDAP_BASE_DN}" \
